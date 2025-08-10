@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export default function HomePage() {
   const [tab, setTab] = useState('txt2img');
@@ -11,6 +11,12 @@ export default function HomePage() {
   const [language, setLanguage] = useState('en');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState('');
+
+  // 防御性移除托管环境可能注入的 Tailwind CDN 脚本（生产不应使用）
+  useEffect(() => {
+    const nodes = Array.from(document.querySelectorAll('script[src*="cdn.tailwindcss.com"]'));
+    nodes.forEach((n) => n.parentElement?.removeChild(n));
+  }, []);
 
   const canSubmit = useMemo(() => {
     if (!prompt.trim()) return false;
