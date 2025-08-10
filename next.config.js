@@ -3,7 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000']
+      allowedOrigins: ['localhost:8080']
     }
   },
   async redirects() {
