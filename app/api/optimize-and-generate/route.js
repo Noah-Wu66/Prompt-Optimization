@@ -111,19 +111,19 @@ ${prompt}`;
 
     console.log('🚀 开始调用 Gemini API...');
     
-    const apiUrl = 'https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:generateContent';
+    // 根据错误信息，需要在查询参数中包含key
+    const apiUrl = `https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     console.log('🌐 API请求详情:');
-    console.log('- 端点:', apiUrl);
+    console.log('- 端点:', apiUrl.replace(apiKey, '***'));
     console.log('- 模型:', requestBody.model);
     console.log('- 请求体大小:', JSON.stringify(requestBody).length, '字符');
-    console.log('- Authorization头:', `Bearer ${apiKey.substring(0, 10)}...`);
+    console.log('- API Key方式:', '查询参数');
     console.log('- 请求体结构:', Object.keys(requestBody));
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify(requestBody),
     });

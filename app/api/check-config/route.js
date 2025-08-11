@@ -16,11 +16,13 @@ export async function GET() {
       }, { status: 400 });
     }
 
-    // 测试简单的API调用
+    // 测试简单的API调用 - 根据错误信息，需要在路径中包含key参数
     const testEndpoints = [
+      `https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://aihubmix.com/gemini/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://aihubmix.com/gemini/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       'https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:generateContent',
-      'https://aihubmix.com/gemini/v1/models/gemini-2.5-flash:generateContent',
-      'https://aihubmix.com/gemini/models/gemini-2.5-flash:generateContent'
+      'https://aihubmix.com/gemini/v1/models/gemini-2.5-flash:generateContent'
     ];
 
     const testResults = [];
@@ -39,12 +41,18 @@ export async function GET() {
           ]
         };
 
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+        
+        // 如果端点包含key参数，就不使用Authorization头
+        if (!endpoint.includes('?key=')) {
+          headers['Authorization'] = `Bearer ${apiKey}`;
+        }
+
         const response = await fetch(endpoint, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
+          headers,
           body: JSON.stringify(testBody),
         });
 
