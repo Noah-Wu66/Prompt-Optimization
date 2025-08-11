@@ -1,0 +1,55 @@
+import { NextResponse } from 'next/server';
+import OpenAI from 'openai';
+
+function createClient() {
+  const apiKey = process.env.AIHUBMIX_API_KEY;
+  if (!apiKey) {
+    throw new Error('缺少 AIHUBMIX_API_KEY 环境变量');
+  }
+  return new OpenAI({ apiKey, baseURL: 'https://aihubmix.com/v1' });
+}
+
+export async function POST(req) {
+  try {
+    const { prompt, language = 'en' } = await req.json();
+    if (!prompt || typeof prompt !== 'string') {
+      return NextResponse.json({ error: '提示词不能为空' }, { status: 400 });
+    }
+
+    const client = createClient();
+    const outputLang = language === 'zh' ? '中文' : '英文';
+    const optimizeInput = `你是一名资深图像提示词工程师。请将以下提示词优化为面向通用 AI 图像生成模型的高质量 ${outputLang} Prompt，要求：
+- 用简洁清晰的结构描述主体、场景、造型、构图、镜头、光照、材质、配色、风格、后期等；
+- 使用逗号分隔短语，避免长句；
+- 尽量补全缺失但常见且合理的细节；
+- 不要包含画幅比例、尺寸规格等技术参数（如 3:2 aspect ratio, 16:9, 1024x1024 等）；
+- 输出仅给最终 ${outputLang} Prompt，不要解释。
+
+原始提示词（可能是中文）：\n${prompt}`;
+
+    const params = {
+      model: 'gpt-5',
+      input: optimizeInput,
+      reasoning: { effort: 'high' },
+      text: { verbosity: 'low' },
+      stream: true,
+    };
+
+    const stream = await client.responses.stream(params);
+    const readable = stream.toReadableStream();
+
+    return new Response(readable, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  } catch (err) {
+    console.error('Streaming route error:', err);
+    return NextResponse.json({ error: err.message || '服务器错误' }, { status: 500 });
+  }
+}
+
+

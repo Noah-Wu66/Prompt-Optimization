@@ -18,6 +18,7 @@ export default function HomePage() {
   const [resultVisible, setResultVisible] = useState(false);
   const reasoningTimerRef = useRef(null);
   const optimizedRef = useRef('');
+  const abortRef = useRef(null);
 
   // 防御性移除托管环境可能注入的 Tailwind CDN 脚本（生产不应使用）
   useEffect(() => {
@@ -42,35 +43,104 @@ export default function HomePage() {
     }
   }
 
-  function startReasoningFeed() {
-    const steps = [
-      '解析输入与意图…',
-      '提取主体与关键视觉要素…',
-      '结构化场景、镜头与光照信息…',
-      '补全常见缺失细节并规避歧义…',
-      '语言润色与风格统一…',
-      '一致性校验与成稿…',
-    ];
-    let index = 0;
-    setReasoningLogs([]);
-    if (reasoningTimerRef.current) clearInterval(reasoningTimerRef.current);
-    reasoningTimerRef.current = setInterval(() => {
-      setReasoningLogs((prev) => {
-        if (index < steps.length) {
-          const next = [...prev, steps[index]];
-          index += 1;
-          return next;
-        }
-        return prev;
-      });
-    }, 600);
-  }
-
   function stopReasoningFeed() {
     if (reasoningTimerRef.current) {
       clearInterval(reasoningTimerRef.current);
       reasoningTimerRef.current = null;
     }
+  }
+
+  function appendReasoning(text) {
+    if (!text) return;
+    setReasoningLogs((prev) => {
+      const pieces = String(text).split(/\n+/).map((s) => s.trim()).filter(Boolean);
+      if (pieces.length === 0) return prev;
+      const next = [...prev, ...pieces];
+      return next.slice(-200); // 限制最多展示200行，避免过长
+    });
+  }
+
+  async function streamSSE(url, options) {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    if (!res.ok || !res.body) {
+      throw new Error('流式连接失败');
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let finalText = '';
+
+    function handleEvent(evt) {
+      try {
+        const data = JSON.parse(evt);
+        const t = data.type || '';
+        // 处理输出文本增量
+        if (t === 'response.output_text.delta' && typeof data.delta === 'string') {
+          finalText += data.delta;
+        }
+        if (t === 'response.output_text.done') {
+          // 输出文本完成
+        }
+        // 处理推理增量（若可用）
+        if ((/reason/i).test(t)) {
+          // 广义匹配任何包含 reasoning 的事件
+          // 常见：response.reasoning.delta / response.output_item.added(type: reasoning)
+          if (typeof data.delta === 'string') {
+            appendReasoning(data.delta);
+          } else if (data.output && Array.isArray(data.output)) {
+            for (const item of data.output) {
+              if (item?.type === 'reasoning') {
+                if (Array.isArray(item.summary) && item.summary.length) {
+                  appendReasoning(item.summary.join('\n'));
+                }
+                if (Array.isArray(item.content)) {
+                  for (const c of item.content) {
+                    if (typeof c.text === 'string') appendReasoning(c.text);
+                  }
+                }
+              }
+            }
+          } else if (data.reasoning && typeof data.reasoning === 'string') {
+            appendReasoning(data.reasoning);
+          }
+        }
+        if (t === 'response.error') {
+          throw new Error(data.error?.message || '模型流式错误');
+        }
+        if (t === 'response.completed') {
+          optimizedRef.current = finalText.trim();
+        }
+      } catch (e) {
+        // 忽略无法解析的事件
+      }
+    }
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const rawEvent = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        // 解析单个SSE事件
+        const lines = rawEvent.split('\n');
+        let dataLines = [];
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice(5).trim());
+          }
+        }
+        if (dataLines.length) {
+          const payload = dataLines.join('\n');
+          handleEvent(payload);
+        }
+      }
+    }
+    // 结束后返回最终文本
+    return optimizedRef.current;
   }
 
   async function handleOptimizeAndRun() {
@@ -88,28 +158,22 @@ export default function HomePage() {
     // 处理中模块优雅入场
     setProcessingMounted(true);
     setTimeout(() => setProcessingVisible(true), 0);
-    startReasoningFeed();
+    setReasoningLogs([]);
     try {
       if (tab === 'txt2img') {
-        const res = await fetch('/api/optimize-and-generate', {
+        const final = await streamSSE('/api/optimize-and-generate/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, language }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || '请求失败');
-        optimizedRef.current = data.optimizedPrompt || '';
-        setOptimized(optimizedRef.current);
+        setOptimized(final);
       } else {
         const form = new FormData();
         form.append('prompt', prompt);
         form.append('language', language);
         if (file) form.append('image', file);
-        const res = await fetch('/api/optimize-and-edit', { method: 'POST', body: form });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || '请求失败');
-        optimizedRef.current = data.optimizedPrompt || '';
-        setOptimized(optimizedRef.current);
+        const final = await streamSSE('/api/optimize-and-edit/stream', { method: 'POST', body: form });
+        setOptimized(final);
       }
     } catch (e) {
       setError(e.message || String(e));
