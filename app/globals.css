@@ -20,6 +20,10 @@ body {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+  /* 防止移动端缩放 */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+  -ms-text-size-adjust: 100%;
 }
 
 /* 允许文本选择 */
@@ -53,12 +57,18 @@ input, textarea, .optArea, .logs {
   .title { font-size: 22px; }
   .subtitle { font-size: 12px; }
   .card { padding: 14px; border-radius: 12px; }
-  .textarea { min-height: 96px; }
+  .textarea { min-height: 96px; font-size: 16px; } /* 确保移动端不缩放 */
   .actions { flex-wrap: wrap; }
   .button { width: 100%; justify-content: center; }
   .row { grid-template-columns: 1fr; }
   .tabs { width: 100%; }
   .tab { flex: 1; text-align: center; }
+  
+  /* 移动端输入框防缩放 */
+  .input, .textarea, .select, .file {
+    font-size: 16px !important;
+    transform: translateZ(0); /* 硬件加速，提升性能 */
+  }
   
   /* 头部栏移动端适配 */
   .headerBar { 
@@ -189,9 +199,14 @@ input, textarea, .optArea, .logs {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 10px 12px;
-  font-size: 14px;
+  font-size: 16px; /* 防止iOS Safari自动缩放 */
   background: #fff;
   transition: border-color 0.2s ease;
+  /* 移动端输入框优化 */
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
 }
 
 .input:focus, .textarea:focus, .select:focus {
