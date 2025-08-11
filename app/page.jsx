@@ -76,6 +76,14 @@ export default function HomePage() {
       try {
         const data = JSON.parse(evt);
         const t = data.type || '';
+        
+        // 调试日志：记录所有事件类型和结构
+        console.log('📨 前端收到事件:', {
+          type: t,
+          keys: Object.keys(data),
+          data: data
+        });
+        
         // 处理输出文本增量
         if (t === 'response.output_text.delta' && typeof data.delta === 'string') {
           finalText += data.delta;
@@ -83,11 +91,26 @@ export default function HomePage() {
         if (t === 'response.output_text.done') {
           // 输出文本完成
         }
-        // 处理推理增量（若可用）
+        // 处理推理增量（根据 Aihubmix API 文档优化）
         if ((/reason/i).test(t)) {
-          // 广义匹配任何包含 reasoning 的事件
-          // 常见：response.reasoning.delta / response.output_item.added(type: reasoning)
-          if (typeof data.delta === 'string') {
+          console.log('🧠 检测到推理事件:', t, data);
+          
+          // 处理 response.reasoning.delta 事件
+          if (t === 'response.reasoning.delta' && typeof data.delta === 'string') {
+            appendReasoning(data.delta);
+          }
+          // 处理 response.output_item.added 事件（类型为 reasoning）
+          else if (t === 'response.output_item.added' && data.item?.type === 'reasoning') {
+            if (Array.isArray(data.item.content)) {
+              for (const c of data.item.content) {
+                if (typeof c.text === 'string') {
+                  appendReasoning(c.text);
+                }
+              }
+            }
+          }
+          // 处理其他可能的推理事件格式
+          else if (typeof data.delta === 'string') {
             appendReasoning(data.delta);
           } else if (data.output && Array.isArray(data.output)) {
             for (const item of data.output) {
@@ -106,9 +129,56 @@ export default function HomePage() {
             appendReasoning(data.reasoning);
           }
         }
+        // 额外处理可能包含推理内容的其他事件类型
+        else if (t === 'response.output_item.added' && data.item) {
+          const item = data.item;
+          if (item.type === 'reasoning' || item.type === 'thinking') {
+            console.log('🧠 发现推理内容:', item);
+            if (Array.isArray(item.content)) {
+              for (const c of item.content) {
+                if (typeof c.text === 'string') {
+                  appendReasoning(c.text);
+                }
+              }
+            }
+            if (typeof item.text === 'string') {
+              appendReasoning(item.text);
+            }
+          }
+        }
         if (t === 'response.error') {
           throw new Error(data.error?.message || '模型流式错误');
         }
+        // 通用推理内容检测（作为备用方案）
+        if (!(/reason/i).test(t) && t !== 'response.output_text.delta' && t !== 'response.output_text.done') {
+          // 检查任何事件中是否包含推理相关的内容
+          if (data.item && (data.item.type === 'reasoning' || data.item.type === 'thinking')) {
+            console.log('🧠 通用检测发现推理内容:', data.item);
+            if (Array.isArray(data.item.content)) {
+              for (const c of data.item.content) {
+                if (typeof c.text === 'string') {
+                  appendReasoning(c.text);
+                }
+              }
+            }
+            if (typeof data.item.text === 'string') {
+              appendReasoning(data.item.text);
+            }
+          }
+          // 检查是否有任何 delta 包含推理内容
+          if (typeof data.delta === 'string' && data.delta.trim()) {
+            // 如果 delta 内容看起来像推理（包含常见推理词汇）
+            const reasoningIndicators = ['思考', '分析', '考虑', 'thinking', 'analyzing', 'considering', '我需要', '让我'];
+            const hasReasoningContent = reasoningIndicators.some(indicator => 
+              data.delta.toLowerCase().includes(indicator.toLowerCase())
+            );
+            if (hasReasoningContent) {
+              console.log('🧠 检测到疑似推理内容:', data.delta);
+              appendReasoning(data.delta);
+            }
+          }
+        }
+        
         if (t === 'response.completed') {
           optimizedRef.current = finalText.trim();
         }

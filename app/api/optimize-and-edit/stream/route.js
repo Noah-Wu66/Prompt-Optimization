@@ -67,11 +67,23 @@ export async function POST(req) {
       async start(controller) {
         try {
           for await (const event of eventStream) {
+            // 调试日志：记录所有事件类型和结构
+            console.log('🔄 流式事件:', JSON.stringify(event, null, 2));
+            console.log('🔄 事件类型:', event.type);
+            console.log('🔄 事件键:', Object.keys(event || {}));
+            
+            // 特别关注推理相关的事件
+            if (event.type && (/reason/i).test(event.type)) {
+              console.log('🧠 推理事件详情:', JSON.stringify(event, null, 2));
+            }
+            
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
           }
         } catch (e) {
+          console.error('❌ 流式处理错误:', e);
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'response.error', error: { message: String(e) } })}\n\n`));
         } finally {
+          console.log('✅ 流式处理完成');
           controller.close();
         }
       },
