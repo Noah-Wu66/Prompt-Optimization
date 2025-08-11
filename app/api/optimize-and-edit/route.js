@@ -148,7 +148,18 @@ ${prompt}`;
     };
 
     console.log('🚀 开始调用 Gemini API...');
-    const response = await fetch('https://aihubmix.com/gemini/v1/models/gemini-2.5-flash:generateContent', {
+    
+    const apiUrl = 'https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:generateContent';
+    console.log('🌐 图生图 API请求详情:');
+    console.log('- 端点:', apiUrl);
+    console.log('- 模型:', requestBody.model);
+    console.log('- 图片MIME类型:', mimeType);
+    console.log('- 图片大小:', Math.round(base64Image.length / 1024), 'KB');
+    console.log('- 请求体大小:', JSON.stringify(requestBody).length, '字符');
+    console.log('- Authorization头:', `Bearer ${apiKey.substring(0, 10)}...`);
+    console.log('- 请求体结构:', Object.keys(requestBody));
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -157,10 +168,20 @@ ${prompt}`;
       body: JSON.stringify(requestBody),
     });
 
+    console.log('📡 API响应状态:', response.status, response.statusText);
+    console.log('📡 响应头:', Object.fromEntries(response.headers.entries()));
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ API调用失败:', response.status, errorText);
-      throw new Error(`Gemini API 调用失败: ${response.status}`);
+      console.error('❌ API错误响应:', errorText);
+      console.error('❌ 请求体详情（不含图片数据）:', JSON.stringify({
+        ...requestBody,
+        contents: requestBody.contents.map(c => ({
+          ...c,
+          parts: c.parts.map(p => p.inline_data ? { inline_data: '(base64图片数据已隐藏)' } : p)
+        }))
+      }, null, 2));
+      throw new Error(`Gemini API 调用失败: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
