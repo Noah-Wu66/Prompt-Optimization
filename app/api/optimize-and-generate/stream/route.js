@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
-import { genai, types } from 'google-genai';
 
-function createClient() {
+function getApiKey() {
   const apiKey = process.env.AIHUBMIX_API_KEY;
   if (!apiKey) {
     throw new Error('缺少 AIHUBMIX_API_KEY 环境变量');
   }
-  return genai.Client({
-    api_key: apiKey,
-    http_options: { base_url: "https://aihubmix.com/gemini" }
-  });
+  return apiKey;
 }
 
 export async function POST(req) {
@@ -19,7 +15,7 @@ export async function POST(req) {
       return NextResponse.json({ error: '提示词不能为空' }, { status: 400 });
     }
 
-    const client = createClient();
+    const apiKey = getApiKey();
     const outputLang = language === 'zh' ? '中文' : '英文';
     const optimizeInput = `你是一名资深图像提示词工程师。请将以下提示词优化为面向通用 AI 图像生成模型的高质量 ${outputLang} Prompt，要求：
 - 用简洁清晰的结构描述主体、场景、造型、构图、镜头、光照、材质、配色、风格、后期等；
@@ -31,47 +27,97 @@ export async function POST(req) {
 原始提示词（可能是中文）：
 ${prompt}`;
 
-    const model = "gemini-2.5-flash";
-    const contents = [
-      types.Content({
-        role: "user",
-        parts: [
-          types.Part.from_text({ text: optimizeInput }),
-        ],
-      }),
-    ];
+    const requestBody = {
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: optimizeInput
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.8,
+        maxOutputTokens: 2048,
+      },
+      safetySettings: [
+        {
+          category: "HARM_CATEGORY_HARASSMENT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+          category: "HARM_CATEGORY_HATE_SPEECH",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        }
+      ]
+    };
 
-    const generateContentConfig = types.GenerateContentConfig({
-      thinking_config: types.ThinkingConfig({
-        thinking_budget: 16384, // 使用最高推理预算
-      }),
+    const response = await fetch('https://aihubmix.com/gemini/v1/models/gemini-2.5-flash:streamGenerateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
     });
+
+    if (!response.ok) {
+      throw new Error(`Gemini API 调用失败: ${response.status}`);
+    }
 
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of client.models.generate_content_stream({
-            model: model,
-            contents: contents,
-            config: generateContentConfig,
-          })) {
-            if (chunk.candidates) {
-              for (const candidate of chunk.candidates) {
-                if (candidate.content && candidate.content.parts) {
-                  for (const part of candidate.content.parts) {
-                    if (part.text && !part.thought) { // 只发送最终答案，不发送思考过程
-                      const event = {
-                        type: 'response.output_text.delta',
-                        delta: part.text
-                      };
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            
+            // 处理多个JSON对象，按行分割
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // 保留不完整的行
+
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (trimmedLine && trimmedLine !== 'data: [DONE]') {
+                try {
+                  // 移除 "data: " 前缀
+                  const jsonStr = trimmedLine.startsWith('data: ') ? 
+                    trimmedLine.slice(6) : trimmedLine;
+                  
+                  if (jsonStr) {
+                    const data = JSON.parse(jsonStr);
+                    
+                    // 提取文本内容
+                    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+                      const parts = data.candidates[0].content.parts;
+                      if (parts && parts[0] && parts[0].text) {
+                        const event = {
+                          type: 'response.output_text.delta',
+                          delta: parts[0].text
+                        };
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                      }
                     }
                   }
+                } catch (parseError) {
+                  console.log('解析JSON失败:', parseError, '原始数据:', trimmedLine);
                 }
               }
             }
           }
+
           // 发送完成事件
           const completeEvent = { type: 'response.completed' };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));

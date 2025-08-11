@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
-import { genai, types } from 'google-genai';
 
-function createClient() {
+function getApiKey() {
   const apiKey = process.env.AIHUBMIX_API_KEY;
   if (!apiKey) {
     throw new Error('缺少 AIHUBMIX_API_KEY 环境变量');
   }
-  return genai.Client({
-    api_key: apiKey,
-    http_options: { base_url: "https://aihubmix.com/gemini" }
-  });
+  return apiKey;
 }
 
 function extractTextFromResponse(response) {
@@ -33,7 +29,7 @@ function extractTextFromResponse(response) {
         console.log(`🔍 检查候选项${i}的parts数组，长度:`, candidate.content.parts.length);
         let texts = [];
         for (const part of candidate.content.parts) {
-          if (part.text && !part.thought) { // 只取最终答案文本，不取思考过程
+          if (part.text) {
             console.log('✅ 找到文本内容:', part.text.substring(0, 50) + '...');
             texts.push(part.text);
           }
@@ -47,12 +43,6 @@ function extractTextFromResponse(response) {
     }
   }
   
-  // 检查是否有直接的text字段
-  if (response.text && typeof response.text === 'string') {
-    console.log('✅ 从text字段找到文本:', response.text.substring(0, 50) + '...');
-    return response.text.trim();
-  }
-  
   console.log('❌ 未能从Gemini响应中提取到文本内容');
   console.log('🔍 响应对象所有键:', Object.keys(response));
   
@@ -61,7 +51,7 @@ function extractTextFromResponse(response) {
 
 export async function POST(req) {
   try {
-    console.log('=== 开始处理文生图优化请求（Gemini） ===');
+    console.log('=== 开始处理文生图优化请求（Gemini Fetch） ===');
     
     const { prompt, language = 'en' } = await req.json();
     console.log('请求参数:', { prompt: prompt?.substring(0, 100) + '...', language });
@@ -73,8 +63,8 @@ export async function POST(req) {
 
     console.log('✅ 提示词验证通过，长度:', prompt.length);
 
-    const client = createClient();
-    console.log('✅ Gemini 客户端创建成功');
+    const apiKey = getApiKey();
+    console.log('✅ API密钥获取成功');
 
     const outputLang = language === 'zh' ? '中文' : '英文';
     const optimizeInput = `你是一名资深图像提示词工程师。请将以下提示词优化为面向通用 AI 图像生成模型的高质量 ${outputLang} Prompt，要求：
@@ -89,36 +79,61 @@ ${prompt}`;
 
     console.log('📝 构建的优化输入:', optimizeInput.substring(0, 200) + '...');
 
-    const model = "gemini-2.5-flash";
-    const contents = [
-      types.Content({
-        role: "user",
-        parts: [
-          types.Part.from_text({ text: optimizeInput }),
-        ],
-      }),
-    ];
-
-    const generateContentConfig = types.GenerateContentConfig({
-      thinking_config: types.ThinkingConfig({
-        thinking_budget: 16384, // 使用最高推理预算
-      }),
-    });
+    const requestBody = {
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: optimizeInput
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.8,
+        maxOutputTokens: 2048,
+      },
+      safetySettings: [
+        {
+          category: "HARM_CATEGORY_HARASSMENT",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        },
+        {
+          category: "HARM_CATEGORY_HATE_SPEECH",
+          threshold: "BLOCK_MEDIUM_AND_ABOVE"
+        }
+      ]
+    };
 
     console.log('🚀 开始调用 Gemini API...');
-    const response = await client.models.generate_content({
-      model: model,
-      contents: contents,
-      config: generateContentConfig,
+    const response = await fetch('https://aihubmix.com/gemini/v1/models/gemini-2.5-flash:generateContent', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ API调用失败:', response.status, errorText);
+      throw new Error(`Gemini API 调用失败: ${response.status}`);
+    }
+
+    const data = await response.json();
     console.log('✅ API调用完成');
 
     // 调试日志：打印响应结构
-    console.log('📥 完整API响应:', JSON.stringify(response, null, 2));
-    console.log('📥 响应类型:', typeof response);
-    console.log('📥 响应键:', Object.keys(response || {}));
+    console.log('📥 完整API响应:', JSON.stringify(data, null, 2));
+    console.log('📥 响应类型:', typeof data);
+    console.log('📥 响应键:', Object.keys(data || {}));
 
-    const optimizedPrompt = extractTextFromResponse(response) || '';
+    const optimizedPrompt = extractTextFromResponse(data) || '';
     
     // 调试日志：打印提取的结果
     console.log('🔍 提取的优化提示词:', optimizedPrompt);
