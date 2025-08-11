@@ -130,7 +130,6 @@ export async function POST(req) {
       input: optimizeInput,
       reasoning: { effort: 'high' },
       text: { verbosity: 'low' },
-      max_output_tokens: 800,
     };
     console.log('📤 API请求参数:', JSON.stringify(requestParams, null, 2));
 
@@ -138,10 +137,20 @@ export async function POST(req) {
     const resp = await client.responses.create(requestParams);
     console.log('✅ API调用完成');
 
+    // 检查响应状态
+    if (resp.status === 'incomplete') {
+      console.log('⚠️ 响应不完整:', resp.incomplete_details);
+      if (resp.incomplete_details?.reason === 'max_output_tokens') {
+        console.log('❌ Token数量达到系统默认限制');
+      }
+    }
+
     // 调试日志：打印响应结构
     console.log('📥 完整API响应:', JSON.stringify(resp, null, 2));
     console.log('📥 响应类型:', typeof resp);
     console.log('📥 响应键:', Object.keys(resp || {}));
+    console.log('📥 响应状态:', resp.status);
+    console.log('📥 Usage 信息:', resp.usage);
 
     const optimizedPrompt = extractTextFromResponses(resp) || '';
     
