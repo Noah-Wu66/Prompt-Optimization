@@ -35,8 +35,21 @@ export async function POST(req) {
       stream: true,
     };
 
-    const stream = await client.responses.stream(params);
-    const readable = stream.toReadableStream();
+    const eventStream = await client.responses.create(params);
+    const encoder = new TextEncoder();
+    const readable = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const event of eventStream) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+          }
+        } catch (e) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'response.error', error: { message: String(e) } })}\n\n`));
+        } finally {
+          controller.close();
+        }
+      },
+    });
 
     return new Response(readable, {
       headers: {
