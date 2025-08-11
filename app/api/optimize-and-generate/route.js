@@ -13,53 +13,47 @@ function createClient() {
 
 function extractTextFromResponses(resp) {
   if (!resp) return '';
-  // Responses API common path
-  const outputText = resp.output_text;
-  if (typeof outputText === 'string' && outputText.trim()) return outputText.trim();
-
-  try {
+  
+  // 尝试直接获取文本内容（非流式响应）
+  if (typeof resp === 'string') return resp.trim();
+  
+  // 检查 output_text 字段
+  if (typeof resp.output_text === 'string' && resp.output_text.trim()) {
+    return resp.output_text.trim();
+  }
+  
+  // 检查 output 数组中的内容
+  if (Array.isArray(resp.output)) {
     const pieces = [];
-    if (Array.isArray(resp.output)) {
-      for (const item of resp.output) {
-        if (item && Array.isArray(item.content)) {
-          for (const block of item.content) {
-            // OpenAI Responses blocks usually carry text directly
-            if (block && typeof block.text === 'string' && block.text.trim()) {
-              pieces.push(block.text);
-            }
-            // Some providers nest under block.content
-            if (block && Array.isArray(block.content)) {
-              for (const inner of block.content) {
-                if (inner && typeof inner.text === 'string' && inner.text.trim()) {
-                  pieces.push(inner.text);
-                }
-              }
-            }
-          }
+    for (const item of resp.output) {
+      if (item && typeof item.text === 'string') {
+        pieces.push(item.text);
+      } else if (item && Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if (c && typeof c.text === 'string') pieces.push(c.text);
         }
       }
     }
-    if (pieces.length) return pieces.join('\n').trim();
-  } catch (_) {}
-
-  // Chat Completions compatible path
-  try {
-    if (Array.isArray(resp.choices) && resp.choices.length > 0) {
-      const ch = resp.choices[0];
-      const msgContent = ch?.message?.content ?? ch?.delta?.content ?? ch?.text;
-      if (typeof msgContent === 'string' && msgContent.trim()) return msgContent.trim();
-      if (Array.isArray(msgContent)) {
-        const buf = [];
-        for (const part of msgContent) {
-          if (typeof part === 'string' && part.trim()) buf.push(part);
-          else if (part && typeof part.text === 'string' && part.text.trim()) buf.push(part.text);
-          else if (part && part.type === 'text' && typeof part.text === 'string' && part.text.trim()) buf.push(part.text);
-        }
-        if (buf.length) return buf.join('\n').trim();
+    if (pieces.length > 0) return pieces.join('\n').trim();
+  }
+  
+  // 检查其他可能的响应格式
+  if (resp.choices && Array.isArray(resp.choices)) {
+    for (const choice of resp.choices) {
+      if (choice.message && typeof choice.message.content === 'string') {
+        return choice.message.content.trim();
       }
     }
-  } catch (_) {}
-
+  }
+  
+  // 最后尝试检查所有可能的文本字段
+  const possibleFields = ['content', 'text', 'message', 'result'];
+  for (const field of possibleFields) {
+    if (resp[field] && typeof resp[field] === 'string' && resp[field].trim()) {
+      return resp[field].trim();
+    }
+  }
+  
   return '';
 }
 
@@ -90,28 +84,13 @@ export async function POST(req) {
       max_output_tokens: 800,
     });
 
-    let optimizedPrompt = extractTextFromResponses(resp) || '';
+    // 调试日志：打印响应结构
+    console.log('API Response:', JSON.stringify(resp, null, 2));
 
-    // Fallback: try Chat Completions if Responses API returned empty
-    if (!optimizedPrompt) {
-      try {
-        const chat = await client.chat.completions.create({
-          model: 'gpt-5',
-          messages: [
-            {
-              role: 'system',
-              content: `你是一名资深图像提示词工程师。严格输出${outputLang}优化后的 Prompt，只输出结果，不要解释。`,
-            },
-            { role: 'user', content: optimizeInput },
-          ],
-          max_tokens: 800,
-          temperature: 0.3,
-        });
-        optimizedPrompt = extractTextFromResponses(chat) || '';
-      } catch (_) {
-        // ignore and let fallback happen
-      }
-    }
+    const optimizedPrompt = extractTextFromResponses(resp) || '';
+    
+    // 调试日志：打印提取的结果
+    console.log('Extracted prompt:', optimizedPrompt);
 
     return NextResponse.json({ optimizedPrompt: optimizedPrompt || prompt, language });
   } catch (err) {
