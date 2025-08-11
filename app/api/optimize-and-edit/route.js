@@ -21,23 +21,48 @@ function createClient() {
 
 function extractTextFromResponses(resp) {
   if (!resp) return '';
-  const maybe = resp.output_text;
-  if (typeof maybe === 'string' && maybe.trim()) return maybe.trim();
+  // Responses API common path
+  const outputText = resp.output_text;
+  if (typeof outputText === 'string' && outputText.trim()) return outputText.trim();
+
   try {
     const pieces = [];
     if (Array.isArray(resp.output)) {
       for (const item of resp.output) {
         if (item && Array.isArray(item.content)) {
-          for (const c of item.content) {
-            if (c && typeof c.text === 'string') pieces.push(c.text);
+          for (const block of item.content) {
+            if (block && typeof block.text === 'string' && block.text.trim()) pieces.push(block.text);
+            if (block && Array.isArray(block.content)) {
+              for (const inner of block.content) {
+                if (inner && typeof inner.text === 'string' && inner.text.trim()) pieces.push(inner.text);
+              }
+            }
           }
         }
       }
     }
-    return pieces.join('\n').trim();
-  } catch (_) {
-    return '';
-  }
+    if (pieces.length) return pieces.join('\n').trim();
+  } catch (_) {}
+
+  // Chat Completions compatible path
+  try {
+    if (Array.isArray(resp.choices) && resp.choices.length > 0) {
+      const ch = resp.choices[0];
+      const msgContent = ch?.message?.content ?? ch?.delta?.content ?? ch?.text;
+      if (typeof msgContent === 'string' && msgContent.trim()) return msgContent.trim();
+      if (Array.isArray(msgContent)) {
+        const buf = [];
+        for (const part of msgContent) {
+          if (typeof part === 'string' && part.trim()) buf.push(part);
+          else if (part && typeof part.text === 'string' && part.text.trim()) buf.push(part.text);
+          else if (part && part.type === 'text' && typeof part.text === 'string' && part.text.trim()) buf.push(part.text);
+        }
+        if (buf.length) return buf.join('\n').trim();
+      }
+    }
+  } catch (_) {}
+
+  return '';
 }
 
 export async function POST(req) {
@@ -86,7 +111,32 @@ export async function POST(req) {
       max_output_tokens: 800,
     });
 
-    const optimizedPrompt = extractTextFromResponses(resp) || '';
+    let optimizedPrompt = extractTextFromResponses(resp) || '';
+
+    // Fallback: try Chat Completions if Responses API returned empty
+    if (!optimizedPrompt) {
+      try {
+        const chat = await client.chat.completions.create({
+          model: 'gpt-5',
+          messages: [
+            {
+              role: 'system',
+              content: `你是一名资深图像提示词工程师。严格输出${outputLang}优化后的 Prompt，只输出结果，不要解释。`,
+            },
+            {
+              role: 'user',
+              content:
+                `图生图场景，给定一张参考图（已作为附件）和原始提示词，请输出优化后的${outputLang} Prompt，仅输出结果：\n\n${prompt}`,
+            },
+          ],
+          max_tokens: 800,
+          temperature: 0.3,
+        });
+        optimizedPrompt = extractTextFromResponses(chat) || '';
+      } catch (_) {
+        // ignore and let fallback happen
+      }
+    }
 
     return NextResponse.json({ optimizedPrompt: optimizedPrompt || prompt, language });
   } catch (err) {
