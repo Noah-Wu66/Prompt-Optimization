@@ -90,51 +90,67 @@ ${prompt}`;
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = '';
+          let completeText = '';
+
+          console.log('🔄 开始处理流式响应...');
 
           while (true) {
             const { value, done } = await reader.read();
             if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
             
-            // 处理多个JSON对象，按行分割
-            const lines = buffer.split('\n');
-            buffer = lines.pop(); // 保留不完整的行
-
-            for (const line of lines) {
-              const trimmedLine = line.trim();
-              if (trimmedLine && trimmedLine !== 'data: [DONE]') {
-                try {
-                  // 移除 "data: " 前缀
-                  const jsonStr = trimmedLine.startsWith('data: ') ? 
-                    trimmedLine.slice(6) : trimmedLine;
-                  
-                  if (jsonStr) {
-                    const data = JSON.parse(jsonStr);
-                    
-                    // 提取文本内容
-                    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                      const parts = data.candidates[0].content.parts;
-                      if (parts && parts[0] && parts[0].text) {
-                        const event = {
-                          type: 'response.output_text.delta',
-                          delta: parts[0].text
-                        };
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-                      }
+            console.log('📦 收到数据块:', chunk.length, '字符');
+            
+            // Gemini 流式响应可能是逐个字符或单词发送的
+            // 我们累积所有数据，然后尝试解析完整的JSON
+            let currentJSON = '';
+            try {
+              // 尝试找到完整的JSON响应
+              const jsonMatch = buffer.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                currentJSON = jsonMatch[0];
+                const responseArray = JSON.parse(currentJSON);
+                
+                // 从响应数组中提取所有文本
+                let extractedText = '';
+                for (const item of responseArray) {
+                  if (item.candidates && item.candidates[0] && item.candidates[0].content) {
+                    const parts = item.candidates[0].content.parts;
+                    if (parts && parts[0] && parts[0].text) {
+                      extractedText += parts[0].text;
                     }
                   }
-                } catch (parseError) {
-                  console.log('解析JSON失败:', parseError, '原始数据:', trimmedLine);
+                }
+                
+                // 如果有新的文本内容，发送增量
+                if (extractedText && extractedText !== completeText) {
+                  const delta = extractedText.slice(completeText.length);
+                  if (delta) {
+                    console.log('📝 发送文本增量:', delta.length, '字符');
+                    const event = {
+                      type: 'response.output_text.delta',
+                      delta: delta
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                    completeText = extractedText;
+                  }
                 }
               }
+            } catch (parseError) {
+              // 忽略解析错误，继续累积数据
+              console.log('🔍 等待更多数据以完成JSON解析...');
             }
           }
+
+          console.log('✅ 流式响应处理完成，总文本长度:', completeText.length);
 
           // 发送完成事件
           const completeEvent = { type: 'response.completed' };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));
         } catch (e) {
+          console.error('❌ 流式处理错误:', e);
           const errorEvent = { 
             type: 'response.error', 
             error: { message: String(e) } 
