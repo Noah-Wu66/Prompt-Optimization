@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function HomePage() {
   const [tab, setTab] = useState('txt2img');
@@ -11,6 +11,13 @@ export default function HomePage() {
   const [language, setLanguage] = useState('en');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState('');
+  const [processingMounted, setProcessingMounted] = useState(false);
+  const [processingVisible, setProcessingVisible] = useState(false);
+  const [reasoningLogs, setReasoningLogs] = useState([]);
+  const [resultMounted, setResultMounted] = useState(false);
+  const [resultVisible, setResultVisible] = useState(false);
+  const reasoningTimerRef = useRef(null);
+  const optimizedRef = useRef('');
 
   // 防御性移除托管环境可能注入的 Tailwind CDN 脚本（生产不应使用）
   useEffect(() => {
@@ -35,10 +42,53 @@ export default function HomePage() {
     }
   }
 
+  function startReasoningFeed() {
+    const steps = [
+      '解析输入与意图…',
+      '提取主体与关键视觉要素…',
+      '结构化场景、镜头与光照信息…',
+      '补全常见缺失细节并规避歧义…',
+      '语言润色与风格统一…',
+      '一致性校验与成稿…',
+    ];
+    let index = 0;
+    setReasoningLogs([]);
+    if (reasoningTimerRef.current) clearInterval(reasoningTimerRef.current);
+    reasoningTimerRef.current = setInterval(() => {
+      setReasoningLogs((prev) => {
+        if (index < steps.length) {
+          const next = [...prev, steps[index]];
+          index += 1;
+          return next;
+        }
+        return prev;
+      });
+    }, 600);
+  }
+
+  function stopReasoningFeed() {
+    if (reasoningTimerRef.current) {
+      clearInterval(reasoningTimerRef.current);
+      reasoningTimerRef.current = null;
+    }
+  }
+
   async function handleOptimizeAndRun() {
     setLoading(true);
     setError('');
+    optimizedRef.current = '';
     setOptimized('');
+    // 结果模块优雅退场
+    if (resultVisible) {
+      setResultVisible(false);
+      setTimeout(() => setResultMounted(false), 260);
+    } else {
+      setResultMounted(false);
+    }
+    // 处理中模块优雅入场
+    setProcessingMounted(true);
+    setTimeout(() => setProcessingVisible(true), 0);
+    startReasoningFeed();
     try {
       if (tab === 'txt2img') {
         const res = await fetch('/api/optimize-and-generate', {
@@ -48,7 +98,8 @@ export default function HomePage() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '请求失败');
-        setOptimized(data.optimizedPrompt || '');
+        optimizedRef.current = data.optimizedPrompt || '';
+        setOptimized(optimizedRef.current);
       } else {
         const form = new FormData();
         form.append('prompt', prompt);
@@ -57,12 +108,23 @@ export default function HomePage() {
         const res = await fetch('/api/optimize-and-edit', { method: 'POST', body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || '请求失败');
-        setOptimized(data.optimizedPrompt || '');
+        optimizedRef.current = data.optimizedPrompt || '';
+        setOptimized(optimizedRef.current);
       }
     } catch (e) {
       setError(e.message || String(e));
     } finally {
       setLoading(false);
+      stopReasoningFeed();
+      // 先让“处理中”优雅退场，再展示结果模块
+      setProcessingVisible(false);
+      setTimeout(() => {
+        setProcessingMounted(false);
+        if (optimizedRef.current) {
+          setResultMounted(true);
+          setTimeout(() => setResultVisible(true), 0);
+        }
+      }, 260);
     }
   }
 
@@ -138,14 +200,34 @@ export default function HomePage() {
           {error && <div className="helper" style={{ color: '#ef4444', marginTop: 8 }}>{error}</div>}
         </section>
 
-        <section className="card">
-          <div className="field">
-            <label className="label">优化后的提示词</label>
-            <div className="optArea">{optimized || '提交后将在此显示 gpt-5（高阶推理）优化的提示词。'}</div>
-          </div>
+        {processingMounted && (
+          <section className={`card ${processingVisible ? 'slide-up fade-in' : 'slide-down fade-out'}`}>
+            <div className="field" style={{ gap: 12 }}>
+              <label className="label">处理中（模型推理过程）</label>
+              <div className="processingHeader">
+                <div className="spinner" aria-hidden />
+                <div className="helper">模型正在深度推理，请稍候…</div>
+              </div>
+              <div className="logs">
+                {reasoningLogs.map((line, idx) => (
+                  <div key={idx} className="logItem">{line}</div>
+                ))}
+                {reasoningLogs.length === 0 && (
+                  <div className="helper">初始化推理中…</div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
-          
-        </section>
+        {resultMounted && (
+          <section className={`card ${resultVisible ? 'slide-up fade-in' : 'slide-down fade-out'}`}>
+            <div className="field">
+              <label className="label">优化后的提示词</label>
+              <div className="optArea">{optimized}</div>
+            </div>
+          </section>
+        )}
       </div>
 
       <div className="footer">Aihubmix · 基于 OpenAI API 代理 · 移动端已适配</div>
