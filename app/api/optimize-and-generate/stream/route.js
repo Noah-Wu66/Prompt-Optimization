@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { genai, types } from 'google-genai';
 
 function createClient() {
   const apiKey = process.env.AIHUBMIX_API_KEY;
   if (!apiKey) {
     throw new Error('缺少 AIHUBMIX_API_KEY 环境变量');
   }
-  return new OpenAI({ apiKey, baseURL: 'https://aihubmix.com/v1' });
+  return genai.Client({
+    api_key: apiKey,
+    http_options: { base_url: "https://aihubmix.com/gemini" }
+  });
 }
 
 export async function POST(req) {
@@ -25,39 +28,60 @@ export async function POST(req) {
 - 不要包含画幅比例、尺寸规格等技术参数（如 3:2 aspect ratio, 16:9, 1024x1024 等）；
 - 输出仅给最终 ${outputLang} Prompt，不要解释。
 
-原始提示词（可能是中文）：\n${prompt}`;
+原始提示词（可能是中文）：
+${prompt}`;
 
-    const params = {
-      model: 'gpt-5',
-      input: optimizeInput,
-      reasoning: { effort: 'high' },
-      text: { verbosity: 'low' },
-      stream: true,
-    };
+    const model = "gemini-2.5-flash";
+    const contents = [
+      types.Content({
+        role: "user",
+        parts: [
+          types.Part.from_text({ text: optimizeInput }),
+        ],
+      }),
+    ];
 
-    const eventStream = await client.responses.create(params);
+    const generateContentConfig = types.GenerateContentConfig({
+      thinking_config: types.ThinkingConfig({
+        thinking_budget: 16384, // 使用最高推理预算
+      }),
+    });
+
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
         try {
-          for await (const event of eventStream) {
-            // 调试日志：记录所有事件类型和结构
-            console.log('🔄 流式事件:', JSON.stringify(event, null, 2));
-            console.log('🔄 事件类型:', event.type);
-            console.log('🔄 事件键:', Object.keys(event || {}));
-            
-            // 特别关注推理相关的事件
-            if (event.type && (/reason/i).test(event.type)) {
-              console.log('🧠 推理事件详情:', JSON.stringify(event, null, 2));
+          for await (const chunk of client.models.generate_content_stream({
+            model: model,
+            contents: contents,
+            config: generateContentConfig,
+          })) {
+            if (chunk.candidates) {
+              for (const candidate of chunk.candidates) {
+                if (candidate.content && candidate.content.parts) {
+                  for (const part of candidate.content.parts) {
+                    if (part.text && !part.thought) { // 只发送最终答案，不发送思考过程
+                      const event = {
+                        type: 'response.output_text.delta',
+                        delta: part.text
+                      };
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                    }
+                  }
+                }
+              }
             }
-            
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
           }
+          // 发送完成事件
+          const completeEvent = { type: 'response.completed' };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));
         } catch (e) {
-          console.error('❌ 流式处理错误:', e);
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'response.error', error: { message: String(e) } })}\n\n`));
+          const errorEvent = { 
+            type: 'response.error', 
+            error: { message: String(e) } 
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
         } finally {
-          console.log('✅ 流式处理完成');
           controller.close();
         }
       },
@@ -76,5 +100,3 @@ export async function POST(req) {
     return NextResponse.json({ error: err.message || '服务器错误' }, { status: 500 });
   }
 }
-
-

@@ -1,104 +1,67 @@
 import { NextResponse } from 'next/server';
-import OpenAI from 'openai';
+import { genai, types } from 'google-genai';
 
-// 使用 Aihubmix 的 OpenAI 兼容 API
 function createClient() {
   const apiKey = process.env.AIHUBMIX_API_KEY;
   if (!apiKey) {
     throw new Error('缺少 AIHUBMIX_API_KEY 环境变量');
   }
-  const client = new OpenAI({ apiKey, baseURL: 'https://aihubmix.com/v1' });
-  return client;
+  return genai.Client({
+    api_key: apiKey,
+    http_options: { base_url: "https://aihubmix.com/gemini" }
+  });
 }
 
-function extractTextFromResponses(resp) {
-  console.log('🔍 开始提取响应文本...');
-  console.log('🔍 响应对象存在:', !!resp);
+function extractTextFromResponse(response) {
+  console.log('🔍 开始提取Gemini响应文本...');
   
-  if (!resp) {
+  if (!response) {
     console.log('❌ 响应为空');
     return '';
   }
   
-  console.log('🔍 响应类型:', typeof resp);
-  console.log('🔍 响应构造函数:', resp.constructor?.name);
+  console.log('🔍 响应类型:', typeof response);
   
-  // 尝试直接获取文本内容（非流式响应）
-  if (typeof resp === 'string') {
-    console.log('✅ 发现字符串响应:', resp.substring(0, 100) + '...');
-    return resp.trim();
-  }
-  
-  // 检查 output_text 字段
-  console.log('🔍 检查 output_text 字段:', typeof resp.output_text);
-  if (typeof resp.output_text === 'string' && resp.output_text.trim()) {
-    console.log('✅ 从 output_text 提取:', resp.output_text.substring(0, 100) + '...');
-    return resp.output_text.trim();
-  }
-  
-  // 检查 output 数组中的内容
-  console.log('🔍 检查 output 数组:', Array.isArray(resp.output), resp.output?.length);
-  if (Array.isArray(resp.output)) {
-    const pieces = [];
-    for (let i = 0; i < resp.output.length; i++) {
-      const item = resp.output[i];
-      console.log(`🔍 处理 output[${i}]:`, typeof item, Object.keys(item || {}));
+  // 尝试从candidates中提取文本
+  if (response.candidates && Array.isArray(response.candidates)) {
+    console.log('🔍 检查candidates数组，长度:', response.candidates.length);
+    for (let i = 0; i < response.candidates.length; i++) {
+      const candidate = response.candidates[i];
+      console.log(`🔍 处理candidates[${i}]:`, typeof candidate);
       
-      if (item && typeof item.text === 'string') {
-        console.log(`✅ 从 output[${i}].text 找到文本:`, item.text.substring(0, 50) + '...');
-        pieces.push(item.text);
-      } else if (item && Array.isArray(item.content)) {
-        console.log(`🔍 检查 output[${i}].content 数组:`, item.content.length);
-        for (let j = 0; j < item.content.length; j++) {
-          const c = item.content[j];
-          console.log(`🔍 处理 content[${j}]:`, typeof c, Object.keys(c || {}));
-          if (c && typeof c.text === 'string') {
-            console.log(`✅ 从 content[${j}].text 找到文本:`, c.text.substring(0, 50) + '...');
-            pieces.push(c.text);
+      if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts)) {
+        console.log(`🔍 检查候选项${i}的parts数组，长度:`, candidate.content.parts.length);
+        let texts = [];
+        for (const part of candidate.content.parts) {
+          if (part.text && !part.thought) { // 只取最终答案文本，不取思考过程
+            console.log('✅ 找到文本内容:', part.text.substring(0, 50) + '...');
+            texts.push(part.text);
           }
+        }
+        if (texts.length > 0) {
+          const result = texts.join('').trim();
+          console.log('✅ 成功提取文本，长度:', result.length);
+          return result;
         }
       }
     }
-    if (pieces.length > 0) {
-      const result = pieces.join('\n').trim();
-      console.log('✅ 从 output 数组组合得到文本:', result.substring(0, 100) + '...');
-      return result;
-    }
   }
   
-  // 检查其他可能的响应格式
-  console.log('🔍 检查 choices 数组:', Array.isArray(resp.choices), resp.choices?.length);
-  if (resp.choices && Array.isArray(resp.choices)) {
-    for (let i = 0; i < resp.choices.length; i++) {
-      const choice = resp.choices[i];
-      console.log(`🔍 处理 choices[${i}]:`, typeof choice, Object.keys(choice || {}));
-      if (choice.message && typeof choice.message.content === 'string') {
-        console.log(`✅ 从 choices[${i}].message.content 找到文本:`, choice.message.content.substring(0, 50) + '...');
-        return choice.message.content.trim();
-      }
-    }
+  // 检查是否有直接的text字段
+  if (response.text && typeof response.text === 'string') {
+    console.log('✅ 从text字段找到文本:', response.text.substring(0, 50) + '...');
+    return response.text.trim();
   }
   
-  // 最后尝试检查所有可能的文本字段
-  const possibleFields = ['content', 'text', 'message', 'result'];
-  console.log('🔍 检查可能的字段:', possibleFields);
-  for (const field of possibleFields) {
-    console.log(`🔍 检查字段 ${field}:`, typeof resp[field]);
-    if (resp[field] && typeof resp[field] === 'string' && resp[field].trim()) {
-      console.log(`✅ 从 ${field} 找到文本:`, resp[field].substring(0, 50) + '...');
-      return resp[field].trim();
-    }
-  }
-  
-  console.log('❌ 未能从响应中提取到文本内容');
-  console.log('🔍 所有可用字段:', Object.keys(resp));
+  console.log('❌ 未能从Gemini响应中提取到文本内容');
+  console.log('🔍 响应对象所有键:', Object.keys(response));
   
   return '';
 }
 
 export async function POST(req) {
   try {
-    console.log('=== 开始处理文生图优化请求 ===');
+    console.log('=== 开始处理文生图优化请求（Gemini） ===');
     
     const { prompt, language = 'en' } = await req.json();
     console.log('请求参数:', { prompt: prompt?.substring(0, 100) + '...', language });
@@ -111,9 +74,8 @@ export async function POST(req) {
     console.log('✅ 提示词验证通过，长度:', prompt.length);
 
     const client = createClient();
-    console.log('✅ OpenAI 客户端创建成功');
+    console.log('✅ Gemini 客户端创建成功');
 
-    // gpt-5 高级推理优化提示词（不做图片生成，仅返回优化后的 Prompt）
     const outputLang = language === 'zh' ? '中文' : '英文';
     const optimizeInput = `你是一名资深图像提示词工程师。请将以下提示词优化为面向通用 AI 图像生成模型的高质量 ${outputLang} Prompt，要求：
 - 用简洁清晰的结构描述主体、场景、造型、构图、镜头、光照、材质、配色、风格、后期等；
@@ -122,38 +84,41 @@ export async function POST(req) {
 - 不要包含画幅比例、尺寸规格等技术参数（如 3:2 aspect ratio, 16:9, 1024x1024 等）；
 - 输出仅给最终 ${outputLang} Prompt，不要解释。
 
-原始提示词（可能是中文）：\n${prompt}`;
+原始提示词（可能是中文）：
+${prompt}`;
 
     console.log('📝 构建的优化输入:', optimizeInput.substring(0, 200) + '...');
 
-    const requestParams = {
-      model: 'gpt-5',
-      input: optimizeInput,
-      reasoning: { effort: 'high' },
-      text: { verbosity: 'low' },
-    };
-    console.log('📤 API请求参数:', JSON.stringify(requestParams, null, 2));
+    const model = "gemini-2.5-flash";
+    const contents = [
+      types.Content({
+        role: "user",
+        parts: [
+          types.Part.from_text({ text: optimizeInput }),
+        ],
+      }),
+    ];
 
-    console.log('🚀 开始调用 gpt-5 API...');
-    const resp = await client.responses.create(requestParams);
+    const generateContentConfig = types.GenerateContentConfig({
+      thinking_config: types.ThinkingConfig({
+        thinking_budget: 16384, // 使用最高推理预算
+      }),
+    });
+
+    console.log('🚀 开始调用 Gemini API...');
+    const response = await client.models.generate_content({
+      model: model,
+      contents: contents,
+      config: generateContentConfig,
+    });
     console.log('✅ API调用完成');
 
-    // 检查响应状态
-    if (resp.status === 'incomplete') {
-      console.log('⚠️ 响应不完整:', resp.incomplete_details);
-      if (resp.incomplete_details?.reason === 'max_output_tokens') {
-        console.log('❌ Token数量达到系统默认限制');
-      }
-    }
-
     // 调试日志：打印响应结构
-    console.log('📥 完整API响应:', JSON.stringify(resp, null, 2));
-    console.log('📥 响应类型:', typeof resp);
-    console.log('📥 响应键:', Object.keys(resp || {}));
-    console.log('📥 响应状态:', resp.status);
-    console.log('📥 Usage 信息:', resp.usage);
+    console.log('📥 完整API响应:', JSON.stringify(response, null, 2));
+    console.log('📥 响应类型:', typeof response);
+    console.log('📥 响应键:', Object.keys(response || {}));
 
-    const optimizedPrompt = extractTextFromResponses(resp) || '';
+    const optimizedPrompt = extractTextFromResponse(response) || '';
     
     // 调试日志：打印提取的结果
     console.log('🔍 提取的优化提示词:', optimizedPrompt);
@@ -175,5 +140,3 @@ export async function POST(req) {
     return NextResponse.json({ error: err.message || '服务器错误' }, { status: 500 });
   }
 }
-
-

@@ -16,6 +16,7 @@ export default function HomePage() {
   const [reasoningLogs, setReasoningLogs] = useState([]);
   const [resultMounted, setResultMounted] = useState(false);
   const [resultVisible, setResultVisible] = useState(false);
+  const [progress, setProgress] = useState(0);
   const reasoningTimerRef = useRef(null);
   const optimizedRef = useRef('');
   const abortRef = useRef(null);
@@ -60,6 +61,49 @@ export default function HomePage() {
     });
   }
 
+  // 虚拟推理步骤
+  const fakeReasoningSteps = [
+    '分析原始提示词的核心元素...',
+    '识别主体、环境、风格等关键信息...',
+    '检查当前描述的完整性...',
+    '补全缺失的视觉细节...',
+    '优化描述结构和语言表达...',
+    '调整镜头、光照、材质描述...',
+    '移除不必要的技术参数...',
+    '整合所有优化要素...',
+    '生成最终优化提示词...',
+    '完成优化处理...'
+  ];
+
+  function startFakeReasoning() {
+    setProgress(0);
+    setReasoningLogs([]);
+    let stepIndex = 0;
+    let currentProgress = 0;
+    
+    const simulate = () => {
+      if (stepIndex < fakeReasoningSteps.length) {
+        appendReasoning(fakeReasoningSteps[stepIndex]);
+        stepIndex++;
+        
+        // 随机增加进度
+        const increment = Math.random() * 15 + 5; // 5-20%
+        currentProgress = Math.min(currentProgress + increment, 95);
+        setProgress(currentProgress);
+        
+        // 随机延迟 300-800ms
+        const delay = Math.random() * 500 + 300;
+        reasoningTimerRef.current = setTimeout(simulate, delay);
+      } else {
+        // 完成进度
+        setProgress(100);
+        appendReasoning('推理完成，正在生成结果...');
+      }
+    };
+    
+    simulate();
+  }
+
   async function streamSSE(url, options) {
     const controller = new AbortController();
     abortRef.current = controller;
@@ -77,13 +121,6 @@ export default function HomePage() {
         const data = JSON.parse(evt);
         const t = data.type || '';
         
-        // 调试日志：记录所有事件类型和结构
-        console.log('📨 前端收到事件:', {
-          type: t,
-          keys: Object.keys(data),
-          data: data
-        });
-        
         // 处理输出文本增量
         if (t === 'response.output_text.delta' && typeof data.delta === 'string') {
           finalText += data.delta;
@@ -91,94 +128,9 @@ export default function HomePage() {
         if (t === 'response.output_text.done') {
           // 输出文本完成
         }
-        // 处理推理增量（根据 Aihubmix API 文档优化）
-        if ((/reason/i).test(t)) {
-          console.log('🧠 检测到推理事件:', t, data);
-          
-          // 处理 response.reasoning.delta 事件
-          if (t === 'response.reasoning.delta' && typeof data.delta === 'string') {
-            appendReasoning(data.delta);
-          }
-          // 处理 response.output_item.added 事件（类型为 reasoning）
-          else if (t === 'response.output_item.added' && data.item?.type === 'reasoning') {
-            if (Array.isArray(data.item.content)) {
-              for (const c of data.item.content) {
-                if (typeof c.text === 'string') {
-                  appendReasoning(c.text);
-                }
-              }
-            }
-          }
-          // 处理其他可能的推理事件格式
-          else if (typeof data.delta === 'string') {
-            appendReasoning(data.delta);
-          } else if (data.output && Array.isArray(data.output)) {
-            for (const item of data.output) {
-              if (item?.type === 'reasoning') {
-                if (Array.isArray(item.summary) && item.summary.length) {
-                  appendReasoning(item.summary.join('\n'));
-                }
-                if (Array.isArray(item.content)) {
-                  for (const c of item.content) {
-                    if (typeof c.text === 'string') appendReasoning(c.text);
-                  }
-                }
-              }
-            }
-          } else if (data.reasoning && typeof data.reasoning === 'string') {
-            appendReasoning(data.reasoning);
-          }
-        }
-        // 额外处理可能包含推理内容的其他事件类型
-        else if (t === 'response.output_item.added' && data.item) {
-          const item = data.item;
-          if (item.type === 'reasoning' || item.type === 'thinking') {
-            console.log('🧠 发现推理内容:', item);
-            if (Array.isArray(item.content)) {
-              for (const c of item.content) {
-                if (typeof c.text === 'string') {
-                  appendReasoning(c.text);
-                }
-              }
-            }
-            if (typeof item.text === 'string') {
-              appendReasoning(item.text);
-            }
-          }
-        }
         if (t === 'response.error') {
           throw new Error(data.error?.message || '模型流式错误');
         }
-        // 通用推理内容检测（作为备用方案）
-        if (!(/reason/i).test(t) && t !== 'response.output_text.delta' && t !== 'response.output_text.done') {
-          // 检查任何事件中是否包含推理相关的内容
-          if (data.item && (data.item.type === 'reasoning' || data.item.type === 'thinking')) {
-            console.log('🧠 通用检测发现推理内容:', data.item);
-            if (Array.isArray(data.item.content)) {
-              for (const c of data.item.content) {
-                if (typeof c.text === 'string') {
-                  appendReasoning(c.text);
-                }
-              }
-            }
-            if (typeof data.item.text === 'string') {
-              appendReasoning(data.item.text);
-            }
-          }
-          // 检查是否有任何 delta 包含推理内容
-          if (typeof data.delta === 'string' && data.delta.trim()) {
-            // 如果 delta 内容看起来像推理（包含常见推理词汇）
-            const reasoningIndicators = ['思考', '分析', '考虑', 'thinking', 'analyzing', 'considering', '我需要', '让我'];
-            const hasReasoningContent = reasoningIndicators.some(indicator => 
-              data.delta.toLowerCase().includes(indicator.toLowerCase())
-            );
-            if (hasReasoningContent) {
-              console.log('🧠 检测到疑似推理内容:', data.delta);
-              appendReasoning(data.delta);
-            }
-          }
-        }
-        
         if (t === 'response.completed') {
           optimizedRef.current = finalText.trim();
         }
@@ -218,6 +170,7 @@ export default function HomePage() {
     setError('');
     optimizedRef.current = '';
     setOptimized('');
+    setProgress(0);
     // 结果模块优雅退场
     if (resultVisible) {
       setResultVisible(false);
@@ -228,29 +181,39 @@ export default function HomePage() {
     // 处理中模块优雅入场
     setProcessingMounted(true);
     setTimeout(() => setProcessingVisible(true), 0);
-    setReasoningLogs([]);
+    
+    // 开始虚拟推理过程
+    startFakeReasoning();
+    
     try {
+      let final;
       if (tab === 'txt2img') {
-        const final = await streamSSE('/api/optimize-and-generate/stream', {
+        final = await streamSSE('/api/optimize-and-generate/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, language }),
         });
-        setOptimized(final);
       } else {
         const form = new FormData();
         form.append('prompt', prompt);
         form.append('language', language);
         if (file) form.append('image', file);
-        const final = await streamSSE('/api/optimize-and-edit/stream', { method: 'POST', body: form });
-        setOptimized(final);
+        final = await streamSSE('/api/optimize-and-edit/stream', { method: 'POST', body: form });
       }
+      
+      // 确保进度条完成
+      setProgress(100);
+      // 稍微延迟显示结果，让用户看到完成状态
+      setTimeout(() => {
+        setOptimized(final);
+      }, 500);
+      
     } catch (e) {
       setError(e.message || String(e));
     } finally {
       setLoading(false);
       stopReasoningFeed();
-      // 先让“处理中”优雅退场，再展示结果模块
+      // 先让"处理中"优雅退场，再展示结果模块
       setProcessingVisible(false);
       setTimeout(() => {
         setProcessingMounted(false);
@@ -258,7 +221,7 @@ export default function HomePage() {
           setResultMounted(true);
           setTimeout(() => setResultVisible(true), 0);
         }
-      }, 260);
+      }, 1000); // 稍微延长时间让推理过程完整显示
     }
   }
 
@@ -269,7 +232,7 @@ export default function HomePage() {
           <div className="logoMark" />
           <div>
             <div className="title">提示词优化器</div>
-            <div className="subtitle">使用 gpt-5（高阶推理）优化提示词 · 支持文生图与图生图</div>
+            <div className="subtitle">使用 Gemini 2.5 Flash（高阶推理）优化提示词 · 支持文生图与图生图</div>
           </div>
         </div>
         <div className="tabs" role="tablist" style={{ width: '100%', maxWidth: 320 }}>
@@ -342,6 +305,29 @@ export default function HomePage() {
                 <div className="spinner" aria-hidden />
                 <div className="helper">模型正在深度推理，请稍候…</div>
               </div>
+              
+              {/* 进度条 */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ 
+                  width: '100%', 
+                  height: '8px', 
+                  backgroundColor: '#f1f5f9', 
+                  borderRadius: '4px', 
+                  overflow: 'hidden' 
+                }}>
+                  <div style={{
+                    width: `${progress}%`,
+                    height: '100%',
+                    backgroundColor: '#3b82f6',
+                    borderRadius: '4px',
+                    transition: 'width 0.3s ease-out'
+                  }} />
+                </div>
+                <div className="helper" style={{ marginTop: 4, fontSize: '12px', color: '#64748b' }}>
+                  推理进度: {Math.round(progress)}%
+                </div>
+              </div>
+              
               <div className="logs">
                 {reasoningLogs.map((line, idx) => (
                   <div key={idx} className="logItem">{line}</div>
@@ -364,7 +350,7 @@ export default function HomePage() {
         )}
       </div>
 
-      <div className="footer">Aihubmix · 基于 OpenAI API 代理 · 移动端已适配</div>
+      <div className="footer">Aihubmix · 基于 Gemini API 代理 · 移动端已适配</div>
     </div>
   );
 }
