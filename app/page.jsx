@@ -61,18 +61,34 @@ export default function HomePage() {
     });
   }
 
-  // 虚拟推理步骤
-  const fakeReasoningSteps = [
-    '分析原始提示词的核心元素...',
-    '识别主体、环境、风格等关键信息...',
-    '检查当前描述的完整性...',
-    '补全缺失的视觉细节...',
-    '优化描述结构和语言表达...',
-    '调整镜头、光照、材质描述...',
-    '移除不必要的技术参数...',
-    '整合所有优化要素...',
-    '生成最终优化提示词...',
-    '完成优化处理...'
+  // 文生图虚拟推理步骤
+  const txt2imgReasoningSteps = [
+    '解析文本描述的语义内容...',
+    '识别核心主题与创作意图...',
+    '分析艺术风格与视觉特征...',
+    '构建场景元素与空间关系...',
+    '评估色彩搭配与光影效果...',
+    '优化构图与视角描述...',
+    '增强细节表现与质感描述...',
+    '调整艺术参数与技术规格...',
+    '整合创意元素形成完整视觉概念...',
+    '生成高质量文生图提示词...',
+    '完成文本到图像的转换优化...'
+  ];
+
+  // 图生图虚拟推理步骤
+  const img2imgReasoningSteps = [
+    '加载并分析上传的原始图像...',
+    '识别图像主要元素与构图结构...',
+    '解析图像风格与色彩特征...',
+    '理解文本修改指令的具体要求...',
+    '分析图文融合的可行性方案...',
+    '规划图像变换与保留策略...',
+    '优化修改指令的精确表达...',
+    '调整变换参数与控制强度...',
+    '整合原图特征与新增元素...',
+    '生成精确的图生图提示词...',
+    '完成基于图像的智能优化...'
   ];
 
   function startFakeReasoning() {
@@ -81,9 +97,12 @@ export default function HomePage() {
     let stepIndex = 0;
     let currentProgress = 0;
     
+    // 根据当前模式选择相应的推理步骤
+    const currentSteps = tab === 'txt2img' ? txt2imgReasoningSteps : img2imgReasoningSteps;
+    
     const simulate = () => {
-      if (stepIndex < fakeReasoningSteps.length) {
-        appendReasoning(fakeReasoningSteps[stepIndex]);
+      if (stepIndex < currentSteps.length) {
+        appendReasoning(currentSteps[stepIndex]);
         stepIndex++;
         
         // 随机增加进度
@@ -97,7 +116,10 @@ export default function HomePage() {
       } else {
         // 完成进度
         setProgress(100);
-        appendReasoning('推理完成，正在生成结果...');
+        const completionMessage = tab === 'txt2img' 
+          ? '文生图推理完成，正在生成结果...' 
+          : '图生图推理完成，正在生成结果...';
+        appendReasoning(completionMessage);
       }
     };
     
