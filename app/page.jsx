@@ -29,7 +29,7 @@ export default function HomePage() {
 
   const canSubmit = useMemo(() => {
     if (!prompt.trim()) return false;
-    if (tab === 'img2img' && !file) return false;
+    if ((tab === 'img2img' || tab === 'img2video') && !file) return false;
     return true;
   }, [prompt, tab, file]);
 
@@ -91,6 +91,36 @@ export default function HomePage() {
     '完成基于图像的智能优化...'
   ];
 
+  // 文生视频虚拟推理步骤
+  const txt2videoReasoningSteps = [
+    '解析文本描述的动态场景内容...',
+    '识别核心主题与动作序列...',
+    '分析视频风格与视觉特征...',
+    '构建时间轴与镜头运动...',
+    '评估色彩搭配与光影变化...',
+    '优化动作描述与节奏控制...',
+    '增强细节表现与质感描述...',
+    '调整视频参数与技术规格...',
+    '整合动态元素形成完整视觉概念...',
+    '生成高质量文生视频提示词...',
+    '完成文本到视频的转换优化...'
+  ];
+
+  // 图生视频虚拟推理步骤
+  const img2videoReasoningSteps = [
+    '加载并分析上传的原始图像...',
+    '识别图像主要元素与静态构图...',
+    '解析图像风格与色彩基调...',
+    '理解文本动画指令的具体要求...',
+    '分析图像到视频的动态转换方案...',
+    '规划动作序列与保留策略...',
+    '优化动画指令的精确表达...',
+    '调整动态参数与运动强度...',
+    '整合静态特征与动态元素...',
+    '生成精确的图生视频提示词...',
+    '完成基于图像的视频智能优化...'
+  ];
+
   function startFakeReasoning() {
     setProgress(0);
     setReasoningLogs([]);
@@ -98,7 +128,23 @@ export default function HomePage() {
     let currentProgress = 0;
     
     // 根据当前模式选择相应的推理步骤
-    const currentSteps = tab === 'txt2img' ? txt2imgReasoningSteps : img2imgReasoningSteps;
+    let currentSteps;
+    switch(tab) {
+      case 'txt2img':
+        currentSteps = txt2imgReasoningSteps;
+        break;
+      case 'img2img':
+        currentSteps = img2imgReasoningSteps;
+        break;
+      case 'txt2video':
+        currentSteps = txt2videoReasoningSteps;
+        break;
+      case 'img2video':
+        currentSteps = img2videoReasoningSteps;
+        break;
+      default:
+        currentSteps = txt2imgReasoningSteps;
+    }
     
     const simulate = () => {
       if (stepIndex < currentSteps.length) {
@@ -116,9 +162,23 @@ export default function HomePage() {
       } else {
         // 完成进度
         setProgress(100);
-        const completionMessage = tab === 'txt2img' 
-          ? '文生图推理完成，正在生成结果...' 
-          : '图生图推理完成，正在生成结果...';
+        let completionMessage;
+        switch(tab) {
+          case 'txt2img':
+            completionMessage = '文生图推理完成，正在生成结果...';
+            break;
+          case 'img2img':
+            completionMessage = '图生图推理完成，正在生成结果...';
+            break;
+          case 'txt2video':
+            completionMessage = '文生视频推理完成，正在生成结果...';
+            break;
+          case 'img2video':
+            completionMessage = '图生视频推理完成，正在生成结果...';
+            break;
+          default:
+            completionMessage = '推理完成，正在生成结果...';
+        }
         appendReasoning(completionMessage);
       }
     };
@@ -215,12 +275,24 @@ export default function HomePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prompt, language }),
         });
-      } else {
+      } else if (tab === 'txt2video') {
+        final = await streamSSE('/api/optimize-and-generate-video/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, language }),
+        });
+      } else if (tab === 'img2img') {
         const form = new FormData();
         form.append('prompt', prompt);
         form.append('language', language);
         if (file) form.append('image', file);
         final = await streamSSE('/api/optimize-and-edit/stream', { method: 'POST', body: form });
+      } else if (tab === 'img2video') {
+        const form = new FormData();
+        form.append('prompt', prompt);
+        form.append('language', language);
+        if (file) form.append('image', file);
+        final = await streamSSE('/api/optimize-and-edit-video/stream', { method: 'POST', body: form });
       }
       
       // 确保进度条完成
@@ -254,12 +326,14 @@ export default function HomePage() {
           <div className="logoMark" />
           <div>
             <div className="title">提示词优化器</div>
-            <div className="subtitle">使用 Gemini 2.5 Flash（高阶推理）优化提示词 · 支持文生图与图生图</div>
+            <div className="subtitle">使用 Gemini 2.5 Flash（高阶推理）优化提示词 · 支持文生图、图生图、文生视频、图生视频</div>
           </div>
         </div>
         <div className="tabs" role="tablist">
           <button className={`tab ${tab==='txt2img' ? 'active':''}`} onClick={() => setTab('txt2img')}>文生图</button>
           <button className={`tab ${tab==='img2img' ? 'active':''}`} onClick={() => setTab('img2img')}>图生图</button>
+          <button className={`tab ${tab==='txt2video' ? 'active':''}`} onClick={() => setTab('txt2video')}>文生视频</button>
+          <button className={`tab ${tab==='img2video' ? 'active':''}`} onClick={() => setTab('img2video')}>图生视频</button>
         </div>
       </div>
 
@@ -275,14 +349,19 @@ export default function HomePage() {
             />
           </div>
 
-          {tab === 'img2img' && (
+          {(tab === 'img2img' || tab === 'img2video') && (
             <div className="field" style={{ marginTop: 12 }}>
               <label className="label">上传参考图（PNG/JPG）</label>
               <input type="file" accept="image/*" className="file" onChange={onFileChange} />
               {filePreview && (
                 <img src={filePreview} alt="预览" className="preview" style={{ marginTop: 8, maxHeight: 220 }} />
               )}
-              <div className="helper">图生图会读取参考图的主体、风格与构成，结合你的提示词进行优化后再编辑生成。</div>
+              <div className="helper">
+                {tab === 'img2img' 
+                  ? '图生图会读取参考图的主体、风格与构成，结合你的提示词进行优化后再编辑生成。'
+                  : '图生视频会读取参考图的主体、风格与构成，结合你的提示词进行优化后生成动态视频。'
+                }
+              </div>
             </div>
           )}
 
@@ -304,7 +383,12 @@ export default function HomePage() {
             </div>
             <div className="field">
               <label className="label">说明</label>
-              <div className="badge">仅优化提示词，不生成/编辑图片</div>
+              <div className="badge">
+                {tab === 'txt2img' || tab === 'img2img' 
+                  ? '仅优化提示词，不生成/编辑图片'
+                  : '仅优化提示词，不生成/编辑视频'
+                }
+              </div>
             </div>
           </div>
 
