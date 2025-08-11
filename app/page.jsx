@@ -257,7 +257,7 @@ export default function HomePage() {
             <div className="subtitle">使用 Gemini 2.5 Flash（高阶推理）优化提示词 · 支持文生图与图生图</div>
           </div>
         </div>
-        <div className="tabs" role="tablist" style={{ width: '100%', maxWidth: 320 }}>
+        <div className="tabs" role="tablist">
           <button className={`tab ${tab==='txt2img' ? 'active':''}`} onClick={() => setTab('txt2img')}>文生图</button>
           <button className={`tab ${tab==='img2img' ? 'active':''}`} onClick={() => setTab('img2img')}>图生图</button>
         </div>

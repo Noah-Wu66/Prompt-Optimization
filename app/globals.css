@@ -148,6 +148,18 @@ input, textarea, .optArea, .logs {
 /* 桌面端适配 (≥1025px) */
 @media (min-width: 1025px) {
   .grid { grid-template-columns: 1fr 1fr; }
+  
+  /* 桌面端头部栏优化 */
+  .headerBar {
+    justify-content: flex-start;
+    gap: 24px;
+  }
+  
+  /* 桌面端tabs优化 */
+  .tabs {
+    width: auto;
+    max-width: none;
+  }
 }
 
 .title {
