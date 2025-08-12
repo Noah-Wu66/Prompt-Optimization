@@ -30,16 +30,16 @@ export async function POST(request) {
     const lastFrameBuffer = await lastFrame.arrayBuffer();
 
     // 检查图片大小，如果过大则提示用户
-    const maxSize = 4 * 1024 * 1024; // 4MB限制
+    const maxSize = 20 * 1024 * 1024; // 20MB限制（每张图片）
     if (firstFrameBuffer.byteLength > maxSize) {
       return NextResponse.json(
-        { error: `首帧图片过大（${Math.round(firstFrameBuffer.byteLength / 1024 / 1024)}MB），请压缩至4MB以下` },
+        { error: `首帧图片过大（${Math.round(firstFrameBuffer.byteLength / 1024 / 1024)}MB），请压缩至20MB以下` },
         { status: 400 }
       );
     }
     if (lastFrameBuffer.byteLength > maxSize) {
       return NextResponse.json(
-        { error: `尾帧图片过大（${Math.round(lastFrameBuffer.byteLength / 1024 / 1024)}MB），请压缩至4MB以下` },
+        { error: `尾帧图片过大（${Math.round(lastFrameBuffer.byteLength / 1024 / 1024)}MB），请压缩至20MB以下` },
         { status: 400 }
       );
     }
@@ -98,7 +98,8 @@ Please respond in English and provide only the optimized prompt without addition
         temperature: 0.7,
         topK: 40,
         topP: 0.8,
-        maxOutputTokens: 2048
+        maxOutputTokens: 65536,  // 大幅增加输出token限制
+        thinking_budget: 16384   // 增加思考预算
       },
       safetySettings: [
         {
@@ -179,6 +180,7 @@ Please respond in English and provide only the optimized prompt without addition
           let buffer = '';
           let completeText = '';
           let hasReceivedData = false;
+          let hasMaxTokensIssue = false;
 
           console.log('🔄 开始处理首尾帧视频流式响应...');
 
@@ -234,11 +236,19 @@ Please respond in English and provide only the optimized prompt without addition
                     const candidate = data.candidates[0];
                     console.log('📄 找到候选结果:', JSON.stringify(candidate, null, 2));
 
-                    // 检查是否被安全过滤器阻止
+                    // 检查是否被安全过滤器阻止或遇到其他问题
                     if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-                      console.warn('⚠️ 内容被过滤:', candidate.finishReason);
+                      console.warn('⚠️ 内容被过滤或遇到问题:', candidate.finishReason);
                       if (candidate.finishReason === 'SAFETY') {
                         throw new Error('内容被安全过滤器阻止，请尝试修改提示词或图片');
+                      } else if (candidate.finishReason === 'MAX_TOKENS') {
+                        console.warn('⚠️ 达到最大token限制，可能是图片过大或提示词过长');
+                        hasMaxTokensIssue = true;
+                        // 对于MAX_TOKENS，我们继续处理，但会在最后给出警告
+                      } else if (candidate.finishReason === 'RECITATION') {
+                        throw new Error('内容可能涉及版权问题，请尝试修改提示词');
+                      } else {
+                        console.warn('⚠️ 未知的finishReason:', candidate.finishReason);
                       }
                     }
 
@@ -281,7 +291,9 @@ Please respond in English and provide only the optimized prompt without addition
           if (completeText.length === 0) {
             console.warn('⚠️ 没有收到任何文本内容，可能是API调用失败或内容被过滤');
             let errorText;
-            if (!hasReceivedData) {
+            if (hasMaxTokensIssue) {
+              errorText = '图片文件过大，导致处理超出限制。请将图片压缩至20MB以下后重试，或尝试使用更简洁的提示词。';
+            } else if (!hasReceivedData) {
               errorText = '网络连接问题，请检查网络状态后重试。如果问题持续，可能是图片文件过大，请压缩后重试。';
             } else {
               errorText = '抱歉，无法处理您的图片。请检查图片是否清晰可见，或尝试修改提示词。';

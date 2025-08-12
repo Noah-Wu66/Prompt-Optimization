@@ -591,7 +591,7 @@ export default function HomePage() {
               <div className="helper" style={{ marginTop: 8 }}>
                 首尾帧视频会分析两张图片的差异，生成描述过渡过程的视频提示词。请上传代表视频开始和结束状态的关键帧图片。
                 <br />
-                <strong>注意：</strong>每张图片大小请控制在4MB以内，建议使用压缩后的PNG或JPG格式以确保稳定处理。
+                <strong>注意：</strong>每张图片大小请控制在20MB以内，建议使用PNG或JPG格式以确保稳定处理。
               </div>
             </div>
           )}
