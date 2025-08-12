@@ -11,6 +11,11 @@ export default function HomePage() {
   const [language, setLanguage] = useState('en');
   const [file, setFile] = useState(null);
   const [filePreview, setFilePreview] = useState('');
+  // 首尾帧视频功能状态
+  const [firstFrame, setFirstFrame] = useState(null);
+  const [lastFrame, setLastFrame] = useState(null);
+  const [firstFramePreview, setFirstFramePreview] = useState('');
+  const [lastFramePreview, setLastFramePreview] = useState('');
   const [processingMounted, setProcessingMounted] = useState(false);
   const [processingVisible, setProcessingVisible] = useState(false);
   const [reasoningLogs, setReasoningLogs] = useState([]);
@@ -30,8 +35,9 @@ export default function HomePage() {
   const canSubmit = useMemo(() => {
     if (!prompt.trim()) return false;
     if ((tab === 'img2img' || tab === 'img2video') && !file) return false;
+    if (tab === 'frame2video' && (!firstFrame || !lastFrame)) return false;
     return true;
-  }, [prompt, tab, file]);
+  }, [prompt, tab, file, firstFrame, lastFrame]);
 
   function onFileChange(e) {
     const f = e.target.files?.[0];
@@ -41,6 +47,28 @@ export default function HomePage() {
       setFilePreview(url);
     } else {
       setFilePreview('');
+    }
+  }
+
+  function onFirstFrameChange(e) {
+    const f = e.target.files?.[0];
+    setFirstFrame(f || null);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setFirstFramePreview(url);
+    } else {
+      setFirstFramePreview('');
+    }
+  }
+
+  function onLastFrameChange(e) {
+    const f = e.target.files?.[0];
+    setLastFrame(f || null);
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setLastFramePreview(url);
+    } else {
+      setLastFramePreview('');
     }
   }
 
@@ -121,6 +149,21 @@ export default function HomePage() {
     '完成基于图像的视频智能优化...'
   ];
 
+  // 首尾帧视频虚拟推理步骤
+  const frame2videoReasoningSteps = [
+    '加载并分析首帧图片内容...',
+    '加载并分析尾帧图片内容...',
+    '识别两张图片的主要元素差异...',
+    '分析场景、光照、色彩的变化...',
+    '检测主体位置和形态的变化...',
+    '构建合理的过渡路径...',
+    '设计中间关键帧的状态...',
+    '优化动作序列和时间节奏...',
+    '整合用户提示词要求...',
+    '生成连贯的过渡描述...',
+    '完成首尾帧过渡提示词优化...'
+  ];
+
   function startFakeReasoning() {
     setProgress(0);
     setReasoningLogs([]);
@@ -141,6 +184,9 @@ export default function HomePage() {
         break;
       case 'img2video':
         currentSteps = img2videoReasoningSteps;
+        break;
+      case 'frame2video':
+        currentSteps = frame2videoReasoningSteps;
         break;
       default:
         currentSteps = txt2imgReasoningSteps;
@@ -175,6 +221,9 @@ export default function HomePage() {
             break;
           case 'img2video':
             completionMessage = '图生视频推理完成，正在生成结果...';
+            break;
+          case 'frame2video':
+            completionMessage = '首尾帧视频推理完成，正在生成结果...';
             break;
           default:
             completionMessage = '推理完成，正在生成结果...';
@@ -293,6 +342,13 @@ export default function HomePage() {
         form.append('language', language);
         if (file) form.append('image', file);
         final = await streamSSE('/api/optimize-and-edit-video/stream', { method: 'POST', body: form });
+      } else if (tab === 'frame2video') {
+        const form = new FormData();
+        form.append('prompt', prompt);
+        form.append('language', language);
+        if (firstFrame) form.append('firstFrame', firstFrame);
+        if (lastFrame) form.append('lastFrame', lastFrame);
+        final = await streamSSE('/api/optimize-frame-transition/stream', { method: 'POST', body: form });
       }
       
       // 确保进度条完成
@@ -328,7 +384,7 @@ export default function HomePage() {
             <div 
               className="switcher-indicator"
               style={{
-                transform: `translateX(${tab === 'txt2img' ? '0%' : tab === 'img2img' ? '100%' : tab === 'txt2video' ? '200%' : '300%'})`
+                transform: `translateX(${tab === 'txt2img' ? '0%' : tab === 'img2img' ? '100%' : tab === 'txt2video' ? '200%' : tab === 'img2video' ? '300%' : '400%'})`
               }}
             />
             <button 
@@ -354,6 +410,12 @@ export default function HomePage() {
               onClick={() => setTab('img2video')}
             >
               图生视频
+            </button>
+            <button 
+              className={`switcher-option ${tab === 'frame2video' ? 'active' : ''}`} 
+              onClick={() => setTab('frame2video')}
+            >
+              首尾帧视频
             </button>
           </div>
         </div>
@@ -398,6 +460,31 @@ export default function HomePage() {
             </div>
           )}
 
+          {tab === 'frame2video' && (
+            <div className="field" style={{ marginTop: 12 }}>
+              <label className="label">上传首尾帧图片（PNG/JPG）</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: 8 }}>
+                <div>
+                  <label className="label" style={{ fontSize: '14px', marginBottom: 4 }}>首帧</label>
+                  <input type="file" accept="image/*" className="file" onChange={onFirstFrameChange} />
+                  {firstFramePreview && (
+                    <img src={firstFramePreview} alt="首帧预览" className="preview" style={{ marginTop: 8, maxHeight: 200, width: '100%', objectFit: 'cover' }} />
+                  )}
+                </div>
+                <div>
+                  <label className="label" style={{ fontSize: '14px', marginBottom: 4 }}>尾帧</label>
+                  <input type="file" accept="image/*" className="file" onChange={onLastFrameChange} />
+                  {lastFramePreview && (
+                    <img src={lastFramePreview} alt="尾帧预览" className="preview" style={{ marginTop: 8, maxHeight: 200, width: '100%', objectFit: 'cover' }} />
+                  )}
+                </div>
+              </div>
+              <div className="helper" style={{ marginTop: 8 }}>
+                首尾帧视频会分析两张图片的差异，生成描述过渡过程的视频提示词。请上传代表视频开始和结束状态的关键帧图片。
+              </div>
+            </div>
+          )}
+
           <div className="row" style={{ marginTop: 12 }}>
             <div className="field">
               <label className="label">输出语言</label>
@@ -419,6 +506,8 @@ export default function HomePage() {
               <div className="badge">
                 {tab === 'txt2img' || tab === 'img2img' 
                   ? '仅优化提示词，不生成/编辑图片'
+                  : tab === 'frame2video'
+                  ? '仅优化提示词，不生成视频'
                   : '仅优化提示词，不生成/编辑视频'
                 }
               </div>
