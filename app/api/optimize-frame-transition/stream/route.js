@@ -125,12 +125,13 @@ Please respond in English and provide only the optimized prompt without addition
       );
     }
 
-    // 创建流式响应 - 与其他API保持一致的格式和错误处理
+    // 创建流式响应 - 使用与其他API完全一致的处理方式
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
           const reader = response.body.getReader();
+          const decoder = new TextDecoder();
           let buffer = '';
           let completeText = '';
 
@@ -143,66 +144,55 @@ Please respond in English and provide only the optimized prompt without addition
               break;
             }
 
-            const chunk = new TextDecoder().decode(value);
+            const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
+
             console.log('📦 收到数据块:', chunk.length, '字符');
-            console.log('📦 数据块内容:', JSON.stringify(chunk));
-            console.log('📦 当前缓冲区总长度:', buffer.length);
 
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            console.log('📦 分割后得到', lines.length, '行，剩余缓冲区:', buffer.length, '字符');
+            // Gemini 流式响应可能是逐个字符或单词发送的
+            // 我们累积所有数据，然后尝试解析完整的JSON
+            let currentJSON = '';
+            try {
+              // 尝试找到完整的JSON响应
+              const jsonMatch = buffer.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                currentJSON = jsonMatch[0];
+                const responseArray = JSON.parse(currentJSON);
 
-            for (let i = 0; i < lines.length; i++) {
-              const line = lines[i];
-              console.log(`📋 处理第${i+1}行:`, JSON.stringify(line));
-
-              if (line.trim() && line.startsWith('data: ')) {
-                try {
-                  const jsonStr = line.slice(6);
-                  console.log('🔍 提取JSON字符串:', JSON.stringify(jsonStr));
-
-                  const data = JSON.parse(jsonStr);
-                  console.log('✅ JSON解析成功:', JSON.stringify(data, null, 2));
-
-                  if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                    const content = data.candidates[0].content;
-                    console.log('📄 找到content:', JSON.stringify(content, null, 2));
-
-                    if (content.parts && content.parts[0] && content.parts[0].text) {
-                      const text = content.parts[0].text;
-                      completeText += text;
-
-                      console.log('📝 提取到文本:', JSON.stringify(text));
-                      console.log('📝 累计文本长度:', completeText.length);
-                      console.log('📝 发送给前端的数据:', JSON.stringify({ text }));
-
-                      // 保持原有的 { text: "..." } 格式
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
-                      console.log('✅ 已发送文本数据到前端');
-                    } else {
-                      console.log('⚠️ content.parts 结构不符合预期');
+                // 从响应数组中提取所有文本
+                let extractedText = '';
+                for (const item of responseArray) {
+                  if (item.candidates && item.candidates[0] && item.candidates[0].content) {
+                    const parts = item.candidates[0].content.parts;
+                    if (parts && parts[0] && parts[0].text) {
+                      extractedText += parts[0].text;
                     }
-                  } else {
-                    console.log('⚠️ data.candidates 结构不符合预期');
                   }
-                } catch (parseError) {
-                  console.error('❌ JSON解析错误:', parseError.message);
-                  console.error('❌ 原始行数据:', JSON.stringify(line));
-                  console.error('❌ 提取的JSON字符串:', JSON.stringify(line.slice(6)));
                 }
-              } else {
-                console.log('⏭️ 跳过非data行:', JSON.stringify(line));
+
+                // 如果有新的文本内容，发送增量
+                if (extractedText && extractedText !== completeText) {
+                  const delta = extractedText.slice(completeText.length);
+                  if (delta) {
+                    console.log('📝 发送文本增量:', delta.length, '字符');
+                    const event = {
+                      type: 'response.output_text.delta',
+                      delta: delta
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                    completeText = extractedText;
+                  }
+                }
               }
+            } catch (parseError) {
+              // 忽略解析错误，继续累积数据
+              console.log('🔍 等待更多数据以完成JSON解析...');
             }
           }
 
-          console.log('✅ 首尾帧视频流式响应处理完成');
-          console.log('📊 最终统计:');
-          console.log('  - 累计文本长度:', completeText.length);
-          console.log('  - 累计文本内容:', JSON.stringify(completeText.substring(0, 200) + (completeText.length > 200 ? '...' : '')));
+          console.log('✅ 首尾帧视频流式响应处理完成，总文本长度:', completeText.length);
 
-          // 发送完成事件 - 使用与其他API一致的格式
+          // 发送完成事件
           const completeEvent = { type: 'response.completed' };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));
         } catch (error) {
