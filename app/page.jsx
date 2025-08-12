@@ -358,8 +358,8 @@ export default function HomePage() {
     // 开始虚拟推理过程
     startFakeReasoning();
 
+    let final; // 将final变量提升到try块外部
     try {
-      let final;
       if (tab === 'txt2img') {
         final = await streamSSE('/api/optimize-and-generate/stream', {
           method: 'POST',
