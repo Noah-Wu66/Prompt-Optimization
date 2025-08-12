@@ -125,46 +125,80 @@ Please respond in English and provide only the optimized prompt without addition
       );
     }
 
-    // 创建流式响应
+    // 创建流式响应 - 使用与其他API一致的格式
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
           const reader = response.body.getReader();
+          const decoder = new TextDecoder();
           let buffer = '';
+          let completeText = '';
+
+          console.log('🔄 开始处理首尾帧视频流式响应...');
 
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
 
-            buffer += new TextDecoder().decode(value);
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
 
-            for (const line of lines) {
-              if (line.trim() && line.startsWith('data: ')) {
-                try {
-                  const jsonStr = line.slice(6);
-                  const data = JSON.parse(jsonStr);
-                  
-                  if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                    const content = data.candidates[0].content;
-                    if (content.parts && content.parts[0] && content.parts[0].text) {
-                      const text = content.parts[0].text;
-                      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+            console.log('📦 收到数据块:', chunk.length, '字符');
+
+            // 处理Gemini流式响应，与其他API保持一致
+            let currentJSON = '';
+            try {
+              // 尝试找到完整的JSON响应
+              const jsonMatch = buffer.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                currentJSON = jsonMatch[0];
+                const responseArray = JSON.parse(currentJSON);
+
+                // 从响应数组中提取所有文本
+                let extractedText = '';
+                for (const item of responseArray) {
+                  if (item.candidates && item.candidates[0] && item.candidates[0].content) {
+                    const parts = item.candidates[0].content.parts;
+                    if (parts && parts[0] && parts[0].text) {
+                      extractedText += parts[0].text;
                     }
                   }
-                } catch (parseError) {
-                  console.error('解析响应数据错误:', parseError);
+                }
+
+                // 如果有新的文本内容，发送增量
+                if (extractedText && extractedText !== completeText) {
+                  const delta = extractedText.slice(completeText.length);
+                  if (delta) {
+                    console.log('📝 发送文本增量:', delta.length, '字符');
+                    const event = {
+                      type: 'response.output_text.delta',
+                      delta: delta
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                    completeText = extractedText;
+                  }
                 }
               }
+            } catch (parseError) {
+              // 忽略解析错误，继续累积数据
+              console.log('🔍 等待更多数据以完成JSON解析...');
             }
           }
 
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          console.log('✅ 首尾帧视频流式响应处理完成，总文本长度:', completeText.length);
+
+          // 发送完成事件 - 使用标准格式
+          const completeEvent = { type: 'response.completed' };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));
           controller.close();
         } catch (error) {
-          console.error('流处理错误:', error);
+          console.error('❌ 首尾帧视频流处理错误:', error);
+          const errorEvent = {
+            type: 'response.error',
+            error: { message: String(error) }
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
           controller.error(error);
         }
       }
@@ -172,9 +206,10 @@ Please respond in English and provide only the optimized prompt without addition
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
       }
     });
 

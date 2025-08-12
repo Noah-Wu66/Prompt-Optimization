@@ -297,16 +297,6 @@ export default function HomePage() {
         if (t === 'response.completed') {
           optimizedRef.current = finalText.trim();
         }
-
-        // 处理首尾帧视频API的特殊格式 { text: "..." }
-        if (!t && typeof data.text === 'string') {
-          finalText += data.text;
-        }
-
-        // 处理首尾帧视频API的完成标志 "[DONE]"
-        if (evt === '[DONE]') {
-          optimizedRef.current = finalText.trim();
-        }
       } catch (e) {
         // 忽略无法解析的事件
       }
@@ -395,10 +385,6 @@ export default function HomePage() {
 
       // 确保进度条完成
       setProgress(100);
-      // 稍微延迟显示结果，让用户看到完成状态
-      setTimeout(() => {
-        setOptimized(final);
-      }, 500);
 
     } catch (e) {
       setError(e.message || String(e));
@@ -410,7 +396,11 @@ export default function HomePage() {
       setTimeout(() => {
         setProcessingMounted(false);
         // 修复：使用final变量或optimizedRef.current，确保结果能正确显示
-        if (final || optimizedRef.current) {
+        const resultText = final || optimizedRef.current;
+        if (resultText) {
+          // 设置优化结果文本
+          setOptimized(resultText);
+          // 显示结果模块
           setResultMounted(true);
           setTimeout(() => setResultVisible(true), 0);
         }
