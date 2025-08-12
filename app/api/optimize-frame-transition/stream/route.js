@@ -99,7 +99,9 @@ Please respond in English and provide only the optimized prompt without addition
         topK: 40,
         topP: 0.8,
         maxOutputTokens: 65536,  // 大幅增加输出token限制
-        thinking_budget: 16384   // 增加思考预算
+        thinking_config: {
+          thinking_budget: 16384  // 增加思考预算
+        }
       },
       safetySettings: [
         {
