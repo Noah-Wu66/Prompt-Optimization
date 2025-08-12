@@ -55,7 +55,7 @@ Please respond in English and provide only the optimized prompt without addition
 请用中文回复，只提供优化后的提示词，不要额外的解释说明。`;
 
     const requestBody = {
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-flash',
       contents: [
         {
           role: 'user',
@@ -81,7 +81,7 @@ Please respond in English and provide only the optimized prompt without addition
       generationConfig: {
         temperature: 0.7,
         topK: 40,
-        topP: 0.95,
+        topP: 0.8,
         maxOutputTokens: 2048
       },
       safetySettings: [
@@ -104,9 +104,9 @@ Please respond in English and provide only the optimized prompt without addition
       ]
     };
 
-    // 调用Gemini API
+    // 调用Gemini API - 使用与其他功能一致的代理端点
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:streamGenerateContent?key=${apiKey}`,
+      `https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: {
