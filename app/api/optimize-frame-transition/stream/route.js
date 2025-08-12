@@ -25,9 +25,25 @@ export async function POST(request) {
       );
     }
 
-    // 将图片转换为Base64
+    // 将图片转换为Base64，并检查大小
     const firstFrameBuffer = await firstFrame.arrayBuffer();
     const lastFrameBuffer = await lastFrame.arrayBuffer();
+
+    // 检查图片大小，如果过大则提示用户
+    const maxSize = 4 * 1024 * 1024; // 4MB限制
+    if (firstFrameBuffer.byteLength > maxSize) {
+      return NextResponse.json(
+        { error: `首帧图片过大（${Math.round(firstFrameBuffer.byteLength / 1024 / 1024)}MB），请压缩至4MB以下` },
+        { status: 400 }
+      );
+    }
+    if (lastFrameBuffer.byteLength > maxSize) {
+      return NextResponse.json(
+        { error: `尾帧图片过大（${Math.round(lastFrameBuffer.byteLength / 1024 / 1024)}MB），请压缩至4MB以下` },
+        { status: 400 }
+      );
+    }
+
     const firstFrameBase64 = Buffer.from(firstFrameBuffer).toString('base64');
     const lastFrameBase64 = Buffer.from(lastFrameBuffer).toString('base64');
 
@@ -112,16 +128,27 @@ Please respond in English and provide only the optimized prompt without addition
       lastFrame: { type: lastFrame.type, size: lastFrameBase64.length }
     });
 
-    const response = await fetch(
-      `https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      }
-    );
+    // 添加超时和重试机制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+
+    let response;
+    try {
+      response = await fetch(
+        `https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Connection': 'keep-alive'
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal
+        }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     console.log('📡 Gemini API响应状态:', response.status, response.statusText);
     console.log('📡 响应头:', Object.fromEntries(response.headers.entries()));
@@ -129,10 +156,18 @@ Please respond in English and provide only the optimized prompt without addition
     if (!response.ok) {
       const errorText = await response.text();
       console.error('❌ Gemini API错误:', errorText);
-      return NextResponse.json(
-        { error: 'AI服务暂时不可用，请稍后重试' },
-        { status: 500 }
-      );
+
+      // 根据错误状态码提供更具体的错误信息
+      let errorMessage = 'AI服务暂时不可用，请稍后重试';
+      if (response.status === 413) {
+        errorMessage = '图片文件过大，请压缩后重试';
+      } else if (response.status === 429) {
+        errorMessage = '请求过于频繁，请稍后重试';
+      } else if (response.status >= 500) {
+        errorMessage = '服务器内部错误，请稍后重试';
+      }
+
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
     // 创建流式响应 - 与其他API保持一致的格式和错误处理
@@ -143,11 +178,23 @@ Please respond in English and provide only the optimized prompt without addition
           const reader = response.body.getReader();
           let buffer = '';
           let completeText = '';
+          let hasReceivedData = false;
 
           console.log('🔄 开始处理首尾帧视频流式响应...');
 
           while (true) {
-            const { done, value } = await reader.read();
+            let readResult;
+            try {
+              readResult = await reader.read();
+            } catch (readError) {
+              console.error('❌ 读取流数据时发生错误:', readError);
+              if (readError.name === 'AbortError') {
+                throw new Error('请求超时，请检查网络连接或稍后重试');
+              }
+              throw new Error('网络连接中断，请重试');
+            }
+
+            const { done, value } = readResult;
             if (done) {
               console.log('📡 流式读取完成');
               break;
@@ -155,6 +202,7 @@ Please respond in English and provide only the optimized prompt without addition
 
             const chunk = new TextDecoder().decode(value);
             buffer += chunk;
+            hasReceivedData = true;
             console.log('📦 收到数据块:', chunk.length, '字符');
             console.log('📦 数据块内容:', JSON.stringify(chunk));
             console.log('📦 当前缓冲区总长度:', buffer.length);
@@ -232,7 +280,12 @@ Please respond in English and provide only the optimized prompt without addition
           // 如果没有收到任何文本内容，发送错误信息
           if (completeText.length === 0) {
             console.warn('⚠️ 没有收到任何文本内容，可能是API调用失败或内容被过滤');
-            const errorText = '抱歉，无法处理您的图片。请检查图片是否清晰可见，或尝试修改提示词。';
+            let errorText;
+            if (!hasReceivedData) {
+              errorText = '网络连接问题，请检查网络状态后重试。如果问题持续，可能是图片文件过大，请压缩后重试。';
+            } else {
+              errorText = '抱歉，无法处理您的图片。请检查图片是否清晰可见，或尝试修改提示词。';
+            }
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: errorText })}\n\n`));
           }
 
@@ -241,9 +294,20 @@ Please respond in English and provide only the optimized prompt without addition
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));
         } catch (error) {
           console.error('❌ 首尾帧视频流处理错误:', error);
+
+          // 根据错误类型提供更具体的错误信息
+          let errorMessage = String(error);
+          if (error.message && error.message.includes('terminated')) {
+            errorMessage = '网络连接被中断，可能是图片文件过大或网络不稳定。请尝试压缩图片或检查网络连接后重试。';
+          } else if (error.message && error.message.includes('timeout')) {
+            errorMessage = '请求超时，请检查网络连接或稍后重试。';
+          } else if (error.message && error.message.includes('AbortError')) {
+            errorMessage = '请求被取消，请重试。';
+          }
+
           const errorEvent = {
             type: 'response.error',
-            error: { message: String(error) }
+            error: { message: errorMessage }
           };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
         } finally {

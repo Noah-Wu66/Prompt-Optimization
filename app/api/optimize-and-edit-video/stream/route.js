@@ -42,6 +42,15 @@ export async function POST(req) {
 原始提示词（可能是中文）：
 ${prompt}`;
 
+    // 检查图片大小，如果过大则提示用户
+    const maxSize = 4 * 1024 * 1024; // 4MB限制
+    if (fileObj.buffer.byteLength > maxSize) {
+      return NextResponse.json(
+        { error: `图片过大（${Math.round(fileObj.buffer.byteLength / 1024 / 1024)}MB），请压缩至4MB以下` },
+        { status: 400 }
+      );
+    }
+
     // 将图片转换为base64
     const base64Image = fileObj.buffer.toString('base64');
     const mimeType = fileObj.type || 'image/png';
@@ -92,13 +101,24 @@ ${prompt}`;
     console.log('- 请求体大小:', JSON.stringify(requestBody).length, '字符');
     console.log('- API Key方式:', '查询参数');
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody),
-    });
+    // 添加超时和重试机制
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+
+    let response;
+    try {
+      response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Connection': 'keep-alive'
+        },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     console.log('📡 API响应状态:', response.status, response.statusText);
     console.log('📡 响应头:', Object.fromEntries(response.headers.entries()));
