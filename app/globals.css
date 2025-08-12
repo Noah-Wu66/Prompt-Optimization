@@ -1,16 +1,16 @@
 :root {
   --bg: #ffffff;
-  --fg: #111827;
-  --muted: #6b7280;
+  --fg: #000000;
+  --muted: #666666;
   --border: #e5e7eb;
-  --primary: #111827;
+  --primary: #000000;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
   margin: 0;
-  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  background: #ffffff;
   color: var(--fg);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
   -webkit-font-smoothing: antialiased;
@@ -77,10 +77,34 @@ input, textarea, .optArea, .logs {
   left: 4px;
   width: calc(25% - 4px);
   height: calc(100% - 8px);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #000000;
   border-radius: 12px;
-  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  transform-origin: center;
+}
+
+.switcher-indicator::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, rgba(255,255,255,0.2) 0%, transparent 50%, rgba(255,255,255,0.1) 100%);
+  border-radius: 12px;
+  opacity: 0;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+.switcher-indicator:hover {
+  transform: scale(1.02);
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.4), 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0; transform: translateX(-100%); }
+  50% { opacity: 1; transform: translateX(100%); }
 }
 
 .switcher-option {
@@ -94,21 +118,28 @@ input, textarea, .optArea, .logs {
   font-size: 14px;
   color: #64748b;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
   min-width: 80px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transform: scale(1);
 }
 
 .switcher-option:hover {
   color: #334155;
+  transform: scale(1.05);
+}
+
+.switcher-option:active {
+  transform: scale(0.98);
 }
 
 .switcher-option.active {
   color: #ffffff;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transform: scale(1);
 }
 
 .container {
@@ -274,10 +305,7 @@ input, textarea, .optArea, .logs {
   font-weight: 800;
   letter-spacing: -0.02em;
   margin: 8px 0 4px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: #000000;
 }
 
 .subtitle {
@@ -327,7 +355,7 @@ input, textarea, .optArea, .logs {
 .actions { display: flex; gap: 12px; align-items: center; }
 .button {
   padding: 12px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #000000;
   color: #fff;
   border: none;
   border-radius: 12px;
@@ -338,7 +366,7 @@ input, textarea, .optArea, .logs {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.25), 0 2px 4px -1px rgba(0, 0, 0, 0.15);
   white-space: nowrap;
 }
 
@@ -467,9 +495,9 @@ input, textarea, .optArea, .logs {
   width: 32px;
   height: 32px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #000000;
   border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.25), 0 2px 4px -1px rgba(0, 0, 0, 0.15);
 }
 
 .footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
