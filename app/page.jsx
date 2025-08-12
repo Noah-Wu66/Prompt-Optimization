@@ -320,22 +320,55 @@ export default function HomePage() {
   }
 
   return (
-    <div className="container">
-      <div className="headerBar" style={{ marginBottom: 16 }}>
-        <div className="logo">
-          <div className="logoMark" />
-          <div>
-            <div className="title">提示词优化器</div>
-            <div className="subtitle">使用 Gemini 2.5 Flash（高阶推理）优化提示词 · 支持文生图、图生图、文生视频、图生视频</div>
+    <div className="app-container">
+      {/* 顶部切换滑块 */}
+      <div className="top-switcher">
+        <div className="switcher-container">
+          <div className="switcher-track">
+            <div 
+              className="switcher-indicator"
+              style={{
+                transform: `translateX(${tab === 'txt2img' ? '0%' : tab === 'img2img' ? '100%' : tab === 'txt2video' ? '200%' : '300%'})`
+              }}
+            />
+            <button 
+              className={`switcher-option ${tab === 'txt2img' ? 'active' : ''}`} 
+              onClick={() => setTab('txt2img')}
+            >
+              文生图
+            </button>
+            <button 
+              className={`switcher-option ${tab === 'img2img' ? 'active' : ''}`} 
+              onClick={() => setTab('img2img')}
+            >
+              图生图
+            </button>
+            <button 
+              className={`switcher-option ${tab === 'txt2video' ? 'active' : ''}`} 
+              onClick={() => setTab('txt2video')}
+            >
+              文生视频
+            </button>
+            <button 
+              className={`switcher-option ${tab === 'img2video' ? 'active' : ''}`} 
+              onClick={() => setTab('img2video')}
+            >
+              图生视频
+            </button>
           </div>
         </div>
-        <div className="tabs" role="tablist">
-          <button className={`tab ${tab==='txt2img' ? 'active':''}`} onClick={() => setTab('txt2img')}>文生图</button>
-          <button className={`tab ${tab==='img2img' ? 'active':''}`} onClick={() => setTab('img2img')}>图生图</button>
-          <button className={`tab ${tab==='txt2video' ? 'active':''}`} onClick={() => setTab('txt2video')}>文生视频</button>
-          <button className={`tab ${tab==='img2video' ? 'active':''}`} onClick={() => setTab('img2video')}>图生视频</button>
-        </div>
       </div>
+
+      <div className="container">
+        <div className="headerBar" style={{ marginBottom: 32 }}>
+          <div className="logo">
+            <div className="logoMark" />
+            <div>
+              <div className="title">提示词优化器</div>
+              <div className="subtitle">使用 Gemini 2.5 Flash（高阶推理）优化提示词 · 支持文生图、图生图、文生视频、图生视频</div>
+            </div>
+          </div>
+        </div>
 
       <div className="grid">
         <section className="card">
@@ -456,7 +489,8 @@ export default function HomePage() {
         )}
       </div>
 
-      <div className="footer">Aihubmix · 基于 Gemini API 代理 · 移动端已适配</div>
+    <div className="footer">Aihubmix · 基于 Gemini API 代理 · 移动端已适配</div>
+      </div>
     </div>
   );
 }
