@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 
 export default function HomePage() {
   const [tab, setTab] = useState('txt2img');
@@ -25,6 +25,38 @@ export default function HomePage() {
   const reasoningTimerRef = useRef(null);
   const optimizedRef = useRef('');
   const abortRef = useRef(null);
+
+  // 顶部切换滑块：基于真实元素尺寸与位置进行定位，避免百分比累积误差
+  const trackRef = useRef(null);
+  const optionRefs = useRef({});
+  const [indicator, setIndicator] = useState({ left: 4, width: 0 });
+
+  // 计算并更新指示器的位置与宽度
+  const updateIndicator = () => {
+    const track = trackRef.current;
+    const activeEl = optionRefs.current?.[tab];
+    if (!track || !activeEl) return;
+    const trackRect = track.getBoundingClientRect();
+    const elRect = activeEl.getBoundingClientRect();
+    const left = Math.max(4, elRect.left - trackRect.left); // 4px 为 track 内边距
+    const width = Math.max(0, elRect.width);
+    setIndicator({ left, width });
+  };
+
+  // 首次渲染与 tab 变更时更新
+  useLayoutEffect(() => {
+    updateIndicator();
+    // 下一帧再兜底更新一次，避免字体加载/滚动条出现导致的第一次测量误差
+    const raf = requestAnimationFrame(updateIndicator);
+    return () => cancelAnimationFrame(raf);
+  }, [tab]);
+
+  // 窗口尺寸变化时更新
+  useEffect(() => {
+    const onResize = () => updateIndicator();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // 防御性移除托管环境可能注入的 Tailwind CDN 脚本（生产不应使用）
   useEffect(() => {
@@ -169,7 +201,7 @@ export default function HomePage() {
     setReasoningLogs([]);
     let stepIndex = 0;
     let currentProgress = 0;
-    
+
     // 根据当前模式选择相应的推理步骤
     let currentSteps;
     switch(tab) {
@@ -191,17 +223,17 @@ export default function HomePage() {
       default:
         currentSteps = txt2imgReasoningSteps;
     }
-    
+
     const simulate = () => {
       if (stepIndex < currentSteps.length) {
         appendReasoning(currentSteps[stepIndex]);
         stepIndex++;
-        
+
         // 随机增加进度
         const increment = Math.random() * 15 + 5; // 5-20%
         currentProgress = Math.min(currentProgress + increment, 95);
         setProgress(currentProgress);
-        
+
         // 随机延迟 300-800ms
         const delay = Math.random() * 500 + 300;
         reasoningTimerRef.current = setTimeout(simulate, delay);
@@ -231,7 +263,7 @@ export default function HomePage() {
         appendReasoning(completionMessage);
       }
     };
-    
+
     simulate();
   }
 
@@ -251,7 +283,7 @@ export default function HomePage() {
       try {
         const data = JSON.parse(evt);
         const t = data.type || '';
-        
+
         // 处理输出文本增量
         if (t === 'response.output_text.delta' && typeof data.delta === 'string') {
           finalText += data.delta;
@@ -312,10 +344,10 @@ export default function HomePage() {
     // 处理中模块优雅入场
     setProcessingMounted(true);
     setTimeout(() => setProcessingVisible(true), 0);
-    
+
     // 开始虚拟推理过程
     startFakeReasoning();
-    
+
     try {
       let final;
       if (tab === 'txt2img') {
@@ -350,14 +382,14 @@ export default function HomePage() {
         if (lastFrame) form.append('lastFrame', lastFrame);
         final = await streamSSE('/api/optimize-frame-transition/stream', { method: 'POST', body: form });
       }
-      
+
       // 确保进度条完成
       setProgress(100);
       // 稍微延迟显示结果，让用户看到完成状态
       setTimeout(() => {
         setOptimized(final);
       }, 500);
-      
+
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -380,40 +412,43 @@ export default function HomePage() {
       {/* 顶部切换滑块 */}
       <div className="top-switcher">
         <div className="switcher-container">
-          <div className="switcher-track">
-            <div 
+          <div className="switcher-track" ref={trackRef}>
+            <div
               className="switcher-indicator"
-              style={{
-                transform: `translateX(${tab === 'txt2img' ? '0%' : tab === 'img2img' ? '100%' : tab === 'txt2video' ? '200%' : tab === 'img2video' ? '300%' : '400%'})`
-              }}
+              style={{ left: indicator.left, width: indicator.width }}
             />
-            <button 
-              className={`switcher-option ${tab === 'txt2img' ? 'active' : ''}`} 
+            <button
+              className={`switcher-option ${tab === 'txt2img' ? 'active' : ''}`}
               onClick={() => setTab('txt2img')}
+              ref={(el) => (optionRefs.current['txt2img'] = el)}
             >
               文生图
             </button>
-            <button 
-              className={`switcher-option ${tab === 'img2img' ? 'active' : ''}`} 
+            <button
+              className={`switcher-option ${tab === 'img2img' ? 'active' : ''}`}
               onClick={() => setTab('img2img')}
+              ref={(el) => (optionRefs.current['img2img'] = el)}
             >
               图生图
             </button>
-            <button 
-              className={`switcher-option ${tab === 'txt2video' ? 'active' : ''}`} 
+            <button
+              className={`switcher-option ${tab === 'txt2video' ? 'active' : ''}`}
               onClick={() => setTab('txt2video')}
+              ref={(el) => (optionRefs.current['txt2video'] = el)}
             >
               文生视频
             </button>
-            <button 
-              className={`switcher-option ${tab === 'img2video' ? 'active' : ''}`} 
+            <button
+              className={`switcher-option ${tab === 'img2video' ? 'active' : ''}`}
               onClick={() => setTab('img2video')}
+              ref={(el) => (optionRefs.current['img2video'] = el)}
             >
               图生视频
             </button>
-            <button 
-              className={`switcher-option ${tab === 'frame2video' ? 'active' : ''}`} 
+            <button
+              className={`switcher-option ${tab === 'frame2video' ? 'active' : ''}`}
               onClick={() => setTab('frame2video')}
+              ref={(el) => (optionRefs.current['frame2video'] = el)}
             >
               首尾帧视频
             </button>
@@ -452,7 +487,7 @@ export default function HomePage() {
                 <img src={filePreview} alt="预览" className="preview" style={{ marginTop: 8, maxHeight: 220 }} />
               )}
               <div className="helper">
-                {tab === 'img2img' 
+                {tab === 'img2img'
                   ? '图生图会读取参考图的主体、风格与构成，结合你的提示词进行优化后再编辑生成。'
                   : '图生视频会读取参考图的主体、风格与构成，结合你的提示词进行优化后生成动态视频。'
                 }
@@ -504,7 +539,7 @@ export default function HomePage() {
             <div className="field">
               <label className="label">说明</label>
               <div className="badge">
-                {tab === 'txt2img' || tab === 'img2img' 
+                {tab === 'txt2img' || tab === 'img2img'
                   ? '仅优化提示词，不生成/编辑图片'
                   : tab === 'frame2video'
                   ? '仅优化提示词，不生成视频'
@@ -533,15 +568,15 @@ export default function HomePage() {
                 <div className="spinner" aria-hidden />
                 <div className="helper">模型正在深度推理，请稍候…</div>
               </div>
-              
+
               {/* 进度条 */}
               <div style={{ marginBottom: 12 }}>
-                <div style={{ 
-                  width: '100%', 
-                  height: '8px', 
-                  backgroundColor: '#f1f5f9', 
-                  borderRadius: '4px', 
-                  overflow: 'hidden' 
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: '#f1f5f9',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
                 }}>
                   <div style={{
                     width: `${progress}%`,
@@ -555,7 +590,7 @@ export default function HomePage() {
                   推理进度: {Math.round(progress)}%
                 </div>
               </div>
-              
+
               <div className="logs">
                 {reasoningLogs.map((line, idx) => (
                   <div key={idx} className="logItem">{line}</div>
