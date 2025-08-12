@@ -268,9 +268,12 @@ export default function HomePage() {
   }
 
   async function streamSSE(url, options) {
+    console.log('🚀 开始streamSSE请求:', url);
     const controller = new AbortController();
     abortRef.current = controller;
     const res = await fetch(url, { ...options, signal: controller.signal });
+    console.log('📡 fetch响应状态:', res.status, res.statusText);
+
     if (!res.ok || !res.body) {
       throw new Error('流式连接失败');
     }
@@ -280,62 +283,102 @@ export default function HomePage() {
     let finalText = '';
 
     function handleEvent(evt) {
+      console.log('🎯 handleEvent收到事件:', JSON.stringify(evt));
       try {
         const data = JSON.parse(evt);
+        console.log('✅ JSON解析成功:', JSON.stringify(data));
         const t = data.type || '';
+        console.log('📝 事件类型:', t);
 
         // 处理输出文本增量
         if (t === 'response.output_text.delta' && typeof data.delta === 'string') {
+          console.log('📝 处理delta文本:', data.delta.length, '字符');
           finalText += data.delta;
+          console.log('📝 累计文本长度:', finalText.length);
         }
         if (t === 'response.output_text.done') {
-          // 输出文本完成
+          console.log('✅ 输出文本完成');
         }
         if (t === 'response.error') {
+          console.error('❌ 收到错误事件:', data.error);
           throw new Error(data.error?.message || '模型流式错误');
         }
         if (t === 'response.completed') {
+          console.log('🎉 收到完成事件，设置optimizedRef:', finalText.length, '字符');
           optimizedRef.current = finalText.trim();
         }
 
         // 处理首尾帧视频API的特殊格式 { text: "..." }
         if (!t && typeof data.text === 'string') {
+          console.log('🎬 处理首尾帧视频文本:', data.text.length, '字符');
+          console.log('🎬 文本内容:', JSON.stringify(data.text.substring(0, 100) + (data.text.length > 100 ? '...' : '')));
           finalText += data.text;
+          console.log('🎬 累计文本长度:', finalText.length);
         }
       } catch (e) {
-        // 忽略无法解析的事件
+        console.log('⚠️ JSON解析失败，忽略事件:', e.message);
+        console.log('⚠️ 原始事件数据:', JSON.stringify(evt));
       }
     }
 
+    console.log('🔄 开始读取SSE流...');
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      if (done) {
+        console.log('📡 SSE流读取完成');
+        break;
+      }
+
+      const chunk = decoder.decode(value, { stream: true });
+      buffer += chunk;
+      console.log('📦 收到SSE数据块:', chunk.length, '字符');
+      console.log('📦 数据块内容:', JSON.stringify(chunk));
+      console.log('📦 当前缓冲区长度:', buffer.length);
+
       let idx;
       while ((idx = buffer.indexOf('\n\n')) !== -1) {
         const rawEvent = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
+        console.log('🎯 解析SSE事件:', JSON.stringify(rawEvent));
+
         // 解析单个SSE事件
         const lines = rawEvent.split('\n');
         let dataLines = [];
         for (const line of lines) {
+          console.log('📋 处理SSE行:', JSON.stringify(line));
           if (line.startsWith('data:')) {
-            dataLines.push(line.slice(5).trim());
+            const dataContent = line.slice(5).trim();
+            dataLines.push(dataContent);
+            console.log('📋 提取data内容:', JSON.stringify(dataContent));
           }
         }
+
         if (dataLines.length) {
           const payload = dataLines.join('\n');
+          console.log('🎯 最终payload:', JSON.stringify(payload));
 
           // 处理首尾帧视频API的完成标志 "[DONE]"
           if (payload === '[DONE]') {
+            console.log('🎉 检测到[DONE]标志，设置optimizedRef');
+            console.log('🎉 当前finalText长度:', finalText.length);
+            console.log('🎉 当前finalText内容:', JSON.stringify(finalText.substring(0, 200) + (finalText.length > 200 ? '...' : '')));
             optimizedRef.current = finalText.trim();
-            console.log('🎯 首尾帧视频处理完成，最终文本长度:', finalText.length);
+            console.log('🎉 optimizedRef.current已设置:', optimizedRef.current.length, '字符');
           } else {
+            console.log('🎯 调用handleEvent处理payload');
             handleEvent(payload);
           }
+        } else {
+          console.log('⚠️ 没有找到data行');
         }
       }
     }
+
+    console.log('🏁 streamSSE函数结束');
+    console.log('🏁 最终finalText:', finalText.length, '字符');
+    console.log('🏁 最终optimizedRef.current:', optimizedRef.current?.length || 0, '字符');
+    console.log('🏁 返回值:', optimizedRef.current?.substring(0, 100) + (optimizedRef.current?.length > 100 ? '...' : ''));
+
     // 结束后返回最终文本
     return optimizedRef.current;
   }
@@ -387,34 +430,52 @@ export default function HomePage() {
         if (file) form.append('image', file);
         final = await streamSSE('/api/optimize-and-edit-video/stream', { method: 'POST', body: form });
       } else if (tab === 'frame2video') {
+        console.log('🎬 开始首尾帧视频处理');
         const form = new FormData();
         form.append('prompt', prompt);
         form.append('language', language);
         if (firstFrame) form.append('firstFrame', firstFrame);
         if (lastFrame) form.append('lastFrame', lastFrame);
+        console.log('🎬 调用streamSSE...');
         final = await streamSSE('/api/optimize-frame-transition/stream', { method: 'POST', body: form });
+        console.log('🎬 streamSSE返回结果:', final?.length || 0, '字符');
+        console.log('🎬 返回内容:', JSON.stringify(final?.substring(0, 100) + (final?.length > 100 ? '...' : '')));
       }
 
       // 确保进度条完成
       setProgress(100);
+      console.log('✅ 处理完成，final变量:', final?.length || 0, '字符');
+      console.log('✅ optimizedRef.current:', optimizedRef.current?.length || 0, '字符');
 
     } catch (e) {
+      console.error('❌ 处理过程中出错:', e);
       setError(e.message || String(e));
     } finally {
+      console.log('🏁 进入finally块');
       setLoading(false);
       stopReasoningFeed();
       // 先让"处理中"优雅退场，再展示结果模块
       setProcessingVisible(false);
       setTimeout(() => {
+        console.log('🏁 setTimeout执行，准备显示结果');
         setProcessingMounted(false);
         // 修复：使用final变量或optimizedRef.current，确保结果能正确显示
         const resultText = final || optimizedRef.current;
+        console.log('🏁 resultText:', resultText?.length || 0, '字符');
+        console.log('🏁 resultText内容:', JSON.stringify(resultText?.substring(0, 100) + (resultText?.length > 100 ? '...' : '')));
+
         if (resultText) {
+          console.log('✅ 有结果文本，设置optimized和显示结果模块');
           // 设置优化结果文本
           setOptimized(resultText);
           // 显示结果模块
           setResultMounted(true);
-          setTimeout(() => setResultVisible(true), 0);
+          setTimeout(() => {
+            console.log('✅ 设置resultVisible为true');
+            setResultVisible(true);
+          }, 0);
+        } else {
+          console.log('❌ 没有结果文本，不显示结果模块');
         }
       }, 1000); // 稍微延长时间让推理过程完整显示
     }

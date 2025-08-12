@@ -138,40 +138,69 @@ Please respond in English and provide only the optimized prompt without addition
 
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+              console.log('📡 流式读取完成');
+              break;
+            }
 
-            buffer += new TextDecoder().decode(value);
+            const chunk = new TextDecoder().decode(value);
+            buffer += chunk;
+            console.log('📦 收到数据块:', chunk.length, '字符');
+            console.log('📦 数据块内容:', JSON.stringify(chunk));
+            console.log('📦 当前缓冲区总长度:', buffer.length);
+
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
+            console.log('📦 分割后得到', lines.length, '行，剩余缓冲区:', buffer.length, '字符');
 
-            for (const line of lines) {
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              console.log(`📋 处理第${i+1}行:`, JSON.stringify(line));
+
               if (line.trim() && line.startsWith('data: ')) {
                 try {
                   const jsonStr = line.slice(6);
-                  console.log('🔍 解析JSON:', jsonStr.substring(0, 100) + (jsonStr.length > 100 ? '...' : ''));
+                  console.log('🔍 提取JSON字符串:', JSON.stringify(jsonStr));
 
                   const data = JSON.parse(jsonStr);
+                  console.log('✅ JSON解析成功:', JSON.stringify(data, null, 2));
 
                   if (data.candidates && data.candidates[0] && data.candidates[0].content) {
                     const content = data.candidates[0].content;
+                    console.log('📄 找到content:', JSON.stringify(content, null, 2));
+
                     if (content.parts && content.parts[0] && content.parts[0].text) {
                       const text = content.parts[0].text;
                       completeText += text;
 
-                      console.log('📝 发送文本:', text.length, '字符');
+                      console.log('📝 提取到文本:', JSON.stringify(text));
+                      console.log('📝 累计文本长度:', completeText.length);
+                      console.log('📝 发送给前端的数据:', JSON.stringify({ text }));
+
                       // 保持原有的 { text: "..." } 格式
                       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+                      console.log('✅ 已发送文本数据到前端');
+                    } else {
+                      console.log('⚠️ content.parts 结构不符合预期');
                     }
+                  } else {
+                    console.log('⚠️ data.candidates 结构不符合预期');
                   }
                 } catch (parseError) {
-                  console.error('🔍 JSON解析错误:', parseError.message);
-                  console.error('🔍 原始数据:', line);
+                  console.error('❌ JSON解析错误:', parseError.message);
+                  console.error('❌ 原始行数据:', JSON.stringify(line));
+                  console.error('❌ 提取的JSON字符串:', JSON.stringify(line.slice(6)));
                 }
+              } else {
+                console.log('⏭️ 跳过非data行:', JSON.stringify(line));
               }
             }
           }
 
-          console.log('✅ 首尾帧视频流式响应处理完成，总文本长度:', completeText.length);
+          console.log('✅ 首尾帧视频流式响应处理完成');
+          console.log('📊 最终统计:');
+          console.log('  - 累计文本长度:', completeText.length);
+          console.log('  - 累计文本内容:', JSON.stringify(completeText.substring(0, 200) + (completeText.length > 200 ? '...' : '')));
 
           // 发送完成事件 - 使用 [DONE] 格式但确保前端能正确处理
           controller.enqueue(encoder.encode('data: [DONE]\n\n'));
