@@ -297,6 +297,16 @@ export default function HomePage() {
         if (t === 'response.completed') {
           optimizedRef.current = finalText.trim();
         }
+
+        // 处理首尾帧视频API的特殊格式 { text: "..." }
+        if (!t && typeof data.text === 'string') {
+          finalText += data.text;
+        }
+
+        // 处理首尾帧视频API的完成标志 "[DONE]"
+        if (evt === '[DONE]') {
+          optimizedRef.current = finalText.trim();
+        }
       } catch (e) {
         // 忽略无法解析的事件
       }
@@ -399,7 +409,8 @@ export default function HomePage() {
       setProcessingVisible(false);
       setTimeout(() => {
         setProcessingMounted(false);
-        if (optimizedRef.current) {
+        // 修复：使用final变量或optimizedRef.current，确保结果能正确显示
+        if (final || optimizedRef.current) {
           setResultMounted(true);
           setTimeout(() => setResultVisible(true), 0);
         }
