@@ -125,7 +125,7 @@ Please respond in English and provide only the optimized prompt without addition
       );
     }
 
-    // 创建流式响应 - 保持原有格式但修复完成事件
+    // 创建流式响应 - 与其他API保持一致的格式和错误处理
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -202,12 +202,18 @@ Please respond in English and provide only the optimized prompt without addition
           console.log('  - 累计文本长度:', completeText.length);
           console.log('  - 累计文本内容:', JSON.stringify(completeText.substring(0, 200) + (completeText.length > 200 ? '...' : '')));
 
-          // 发送完成事件 - 使用 [DONE] 格式但确保前端能正确处理
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
+          // 发送完成事件 - 使用与其他API一致的格式
+          const completeEvent = { type: 'response.completed' };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(completeEvent)}\n\n`));
         } catch (error) {
           console.error('❌ 首尾帧视频流处理错误:', error);
-          controller.error(error);
+          const errorEvent = {
+            type: 'response.error',
+            error: { message: String(error) }
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
+        } finally {
+          controller.close();
         }
       }
     });
