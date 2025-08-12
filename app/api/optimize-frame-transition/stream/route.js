@@ -105,6 +105,13 @@ Please respond in English and provide only the optimized prompt without addition
     };
 
     // 调用Gemini API - 使用与其他功能一致的代理端点
+    console.log('🚀 准备调用Gemini API...');
+    console.log('📋 请求体大小:', JSON.stringify(requestBody).length, '字符');
+    console.log('📋 图片信息:', {
+      firstFrame: { type: firstFrame.type, size: firstFrameBase64.length },
+      lastFrame: { type: lastFrame.type, size: lastFrameBase64.length }
+    });
+
     const response = await fetch(
       `https://aihubmix.com/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?key=${apiKey}`,
       {
@@ -116,9 +123,12 @@ Please respond in English and provide only the optimized prompt without addition
       }
     );
 
+    console.log('📡 Gemini API响应状态:', response.status, response.statusText);
+    console.log('📡 响应头:', Object.fromEntries(response.headers.entries()));
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Gemini API错误:', errorText);
+      console.error('❌ Gemini API错误:', errorText);
       return NextResponse.json(
         { error: 'AI服务暂时不可用，请稍后重试' },
         { status: 500 }
@@ -165,12 +175,27 @@ Please respond in English and provide only the optimized prompt without addition
                   const data = JSON.parse(jsonStr);
                   console.log('✅ JSON解析成功:', JSON.stringify(data, null, 2));
 
-                  if (data.candidates && data.candidates[0] && data.candidates[0].content) {
-                    const content = data.candidates[0].content;
-                    console.log('📄 找到content:', JSON.stringify(content, null, 2));
+                  // 检查是否有错误
+                  if (data.error) {
+                    console.error('❌ API返回错误:', JSON.stringify(data.error, null, 2));
+                    throw new Error(`API错误: ${data.error.message || JSON.stringify(data.error)}`);
+                  }
 
-                    if (content.parts && content.parts[0] && content.parts[0].text) {
-                      const text = content.parts[0].text;
+                  // 检查是否有候选结果
+                  if (data.candidates && data.candidates.length > 0) {
+                    const candidate = data.candidates[0];
+                    console.log('📄 找到候选结果:', JSON.stringify(candidate, null, 2));
+
+                    // 检查是否被安全过滤器阻止
+                    if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+                      console.warn('⚠️ 内容被过滤:', candidate.finishReason);
+                      if (candidate.finishReason === 'SAFETY') {
+                        throw new Error('内容被安全过滤器阻止，请尝试修改提示词或图片');
+                      }
+                    }
+
+                    if (candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text) {
+                      const text = candidate.content.parts[0].text;
                       completeText += text;
 
                       console.log('📝 提取到文本:', JSON.stringify(text));
@@ -181,10 +206,12 @@ Please respond in English and provide only the optimized prompt without addition
                       controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
                       console.log('✅ 已发送文本数据到前端');
                     } else {
-                      console.log('⚠️ content.parts 结构不符合预期');
+                      console.log('⚠️ candidate.content.parts 结构不符合预期');
+                      console.log('⚠️ candidate结构:', JSON.stringify(candidate, null, 2));
                     }
                   } else {
-                    console.log('⚠️ data.candidates 结构不符合预期');
+                    console.log('⚠️ 没有找到candidates或candidates为空');
+                    console.log('⚠️ 完整响应数据:', JSON.stringify(data, null, 2));
                   }
                 } catch (parseError) {
                   console.error('❌ JSON解析错误:', parseError.message);
@@ -201,6 +228,13 @@ Please respond in English and provide only the optimized prompt without addition
           console.log('📊 最终统计:');
           console.log('  - 累计文本长度:', completeText.length);
           console.log('  - 累计文本内容:', JSON.stringify(completeText.substring(0, 200) + (completeText.length > 200 ? '...' : '')));
+
+          // 如果没有收到任何文本内容，发送错误信息
+          if (completeText.length === 0) {
+            console.warn('⚠️ 没有收到任何文本内容，可能是API调用失败或内容被过滤');
+            const errorText = '抱歉，无法处理您的图片。请检查图片是否清晰可见，或尝试修改提示词。';
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: errorText })}\n\n`));
+          }
 
           // 发送完成事件 - 使用与其他API一致的格式
           const completeEvent = { type: 'response.completed' };
