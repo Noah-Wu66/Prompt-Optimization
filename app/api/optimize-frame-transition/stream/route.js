@@ -179,6 +179,7 @@ Please respond in English and provide only the optimized prompt without addition
       async start(controller) {
         try {
           const reader = response.body.getReader();
+          const decoder = new TextDecoder();
           let buffer = '';
           let completeText = '';
           let hasReceivedData = false;
@@ -204,109 +205,56 @@ Please respond in English and provide only the optimized prompt without addition
               break;
             }
 
-            const chunk = new TextDecoder().decode(value);
+            const chunk = decoder.decode(value, { stream: true });
             buffer += chunk;
             hasReceivedData = true;
             console.log('📦 收到数据块:', chunk.length, '字符');
             console.log('📦 数据块内容:', JSON.stringify(chunk));
             console.log('📦 当前缓冲区总长度:', buffer.length);
 
-            const lines = buffer.split('\n');
-            buffer = lines.pop() || '';
-            console.log('📦 分割后得到', lines.length, '行，剩余缓冲区:', buffer.length, '字符');
-
-            // 尝试解析整个缓冲区作为JSON数组
+            // 优先按 Gemini 的 JSON 数组流式格式解析
             try {
-              // 移除可能的尾部逗号和换行符，然后尝试解析为JSON数组
-              let jsonStr = buffer.trim();
-              if (jsonStr.endsWith(',')) {
-                jsonStr = jsonStr.slice(0, -1);
-              }
-              if (!jsonStr.startsWith('[')) {
-                jsonStr = '[' + jsonStr;
-              }
-              if (!jsonStr.endsWith(']')) {
-                jsonStr = jsonStr + ']';
-              }
+              const jsonMatch = buffer.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                const currentJSON = jsonMatch[0];
+                console.log('🔍 发现完整JSON数组，长度:', currentJSON.length);
+                const responseArray = JSON.parse(currentJSON);
 
-              console.log('🔍 尝试解析JSON数组，长度:', jsonStr.length);
-              const dataArray = JSON.parse(jsonStr);
-              console.log('✅ JSON数组解析成功，包含', dataArray.length, '个元素');
+                // 从响应数组中提取文本，并按增量发送
+                let extractedText = '';
+                for (const item of responseArray) {
+                  if (item.candidates && item.candidates[0]) {
+                    const candidate = item.candidates[0];
 
-              // 处理数组中的每个响应对象
-              for (const data of dataArray) {
-                if (data.candidates && data.candidates.length > 0) {
-                  const candidate = data.candidates[0];
-                  console.log('📄 找到候选结果:', JSON.stringify(candidate, null, 2));
+                    if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+                      console.warn('⚠️ 内容被过滤或遇到问题:', candidate.finishReason);
+                      if (candidate.finishReason === 'SAFETY') {
+                        throw new Error('内容被安全过滤器阻止，请尝试修改提示词或图片');
+                      } else if (candidate.finishReason === 'MAX_TOKENS') {
+                        console.warn('⚠️ 达到最大token限制，可能是图片过大或提示词过长');
+                        hasMaxTokensIssue = true;
+                      }
+                    }
 
-                  // 检查是否被安全过滤器阻止或遇到其他问题
-                  if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-                    console.warn('⚠️ 内容被过滤或遇到问题:', candidate.finishReason);
-                    if (candidate.finishReason === 'SAFETY') {
-                      throw new Error('内容被安全过滤器阻止，请尝试修改提示词或图片');
-                    } else if (candidate.finishReason === 'MAX_TOKENS') {
-                      console.warn('⚠️ 达到最大token限制，可能是图片过大或提示词过长');
-                      hasMaxTokensIssue = true;
-                      // 对于MAX_TOKENS，我们继续处理，但会在最后给出警告
-                    } else if (candidate.finishReason === 'RECITATION') {
-                      throw new Error('内容可能涉及版权问题，请尝试修改提示词');
-                    } else {
-                      console.warn('⚠️ 未知的finishReason:', candidate.finishReason);
+                    const parts = candidate.content?.parts;
+                    if (parts && parts[0]?.text) {
+                      extractedText += parts[0].text;
                     }
                   }
+                }
 
-                  if (candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text) {
-                    const text = candidate.content.parts[0].text;
-                    completeText += text;
-
-                    console.log('📝 提取到文本:', JSON.stringify(text));
-                    console.log('📝 累计文本长度:', completeText.length);
-                    console.log('📝 发送给前端的数据:', JSON.stringify({ text }));
-
-                    // 保持原有的 { text: "..." } 格式
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
-                    console.log('✅ 已发送文本数据到前端');
-                  } else {
-                    console.log('⚠️ candidate.content.parts 结构不符合预期');
-                    console.log('⚠️ candidate结构:', JSON.stringify(candidate, null, 2));
+                if (extractedText && extractedText !== completeText) {
+                  const delta = extractedText.slice(completeText.length);
+                  if (delta) {
+                    console.log('📝 发送文本增量:', delta.length, '字符');
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta })}\n\n`));
+                    completeText = extractedText;
                   }
-                } else {
-                  console.log('⚠️ 没有找到candidates或candidates为空');
-                  console.log('⚠️ 完整响应数据:', JSON.stringify(data, null, 2));
                 }
               }
             } catch (parseError) {
-              console.error('❌ JSON数组解析失败，尝试逐行解析:', parseError.message);
-
-              // 如果JSON数组解析失败，回退到逐行解析
-              for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                console.log(`📋 处理第${i+1}行:`, JSON.stringify(line));
-
-                if (line.trim() && line.startsWith('data: ')) {
-                  try {
-                    const jsonStr = line.slice(6);
-                    console.log('🔍 提取JSON字符串:', JSON.stringify(jsonStr));
-
-                    const data = JSON.parse(jsonStr);
-                    console.log('✅ JSON解析成功:', JSON.stringify(data, null, 2));
-
-                    // 检查是否有候选结果
-                    if (data.candidates && data.candidates.length > 0) {
-                      const candidate = data.candidates[0];
-                      if (candidate.content && candidate.content.parts && candidate.content.parts[0] && candidate.content.parts[0].text) {
-                        const text = candidate.content.parts[0].text;
-                        completeText += text;
-                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
-                      }
-                    }
-                  } catch (lineParseError) {
-                    console.error('❌ 行JSON解析错误:', lineParseError.message);
-                  }
-                } else {
-                  console.log('⏭️ 跳过非data行:', JSON.stringify(line));
-                }
-              }
+              // 忽略解析错误，继续累积数据，等待更多块到来
+              console.log('🔍 等待更多数据以完成JSON解析...');
             }
           }
 
