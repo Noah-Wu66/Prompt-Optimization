@@ -55,7 +55,7 @@ export async function POST(request) {
 Please follow these guidelines:
 - Integrate all elements (subjects, scenes, actions, camera movements, lighting changes, materials, colors, style, rhythm, etc.) into one coherent and fluent description;
 - Use comma-separated phrases, avoid long sentences and paragraphs;
-- Output as a single paragraph (no line breaks); limit to 50 words in English;
+- Output as a single paragraph (no line breaks); English only; no Chinese or translations; limit to 50 words;
 - Focus on describing dynamic elements, camera movements and temporal changes;
 - Fill in missing but common and reasonable dynamic details;
 - Do not include video specifications, duration, frame rate and other technical parameters (such as 4K, 30fps, 16:9, etc.);
@@ -65,7 +65,7 @@ Please follow these guidelines:
 请遵循以下准则：
 - 将各种要素（主体、场景、动作、镜头运动、时间轴、光照变化、材质、配色、风格、节奏等）融合在一段连贯流畅的描述中；
 - 使用逗号分隔短语，避免长句和分段；
-- 输出为单段（不要分段）；中文不超过100字；英文不超过50词；
+- 输出为单段（不要分段）；仅用中文，不得出现任何英文或翻译；不超过100字；
 - 重点描述动态元素、镜头运动和时间变化；
 - 尽量补全缺失但常见且合理的动态细节；
 - 不要包含视频规格、时长、帧率等技术参数（如 4K, 30fps, 16:9 等）；
@@ -221,7 +221,7 @@ Please follow these guidelines:
                 console.log('🔍 发现完整JSON数组，长度:', currentJSON.length);
                 const responseArray = JSON.parse(currentJSON);
 
-                // 从响应数组中提取文本，并按增量发送
+                // 从响应数组中提取文本
                 let extractedText = '';
                 for (const item of responseArray) {
                   if (item.candidates && item.candidates[0]) {
@@ -244,12 +244,30 @@ Please follow these guidelines:
                   }
                 }
 
-                if (extractedText && extractedText !== completeText) {
-                  const delta = extractedText.slice(completeText.length);
+                // 语言输出约束：在服务端剔除不需要的语言片段（仅对中文模式强制）
+                const sanitizeForLanguage = (text) => {
+                  if (language === 'zh') {
+                    // 保留第一个段落（常见场景：中文后面紧跟一个空行+英文翻译）
+                    const paraSplit = text.split(/\r?\n\r?\n/);
+                    let s = (paraSplit[0] || text);
+                    // 若下一行以英文开头（如 From ...），去掉从该行开始的内容
+                    s = s.replace(/\n[ A-Za-z].*$/s, '');
+                    return s.trim();
+                  } else if (language === 'en') {
+                    // 可选：去掉明显的中文段落
+                    return text.replace(/[\u4e00-\u9fa5].*$/s, '').trim();
+                  }
+                  return text;
+                };
+
+                const sanitizedText = sanitizeForLanguage(extractedText);
+
+                if (sanitizedText && sanitizedText !== completeText) {
+                  const delta = sanitizedText.slice(completeText.length);
                   if (delta) {
                     console.log('📝 发送文本增量:', delta.length, '字符');
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: delta })}\n\n`));
-                    completeText = extractedText;
+                    completeText = sanitizedText;
                   }
                 }
               }
