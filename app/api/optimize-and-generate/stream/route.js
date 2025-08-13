@@ -20,6 +20,7 @@ export async function POST(req) {
     const optimizeInput = `你是一名资深图像提示词工程师。请将以下提示词优化为面向通用 AI 图像生成模型的高质量 ${outputLang} Prompt，要求：
 - 将各种要素（主体、场景、造型、构图、镜头、光照、材质、配色、风格、后期等）融合在一段连贯流畅的描述中；
 - 使用逗号分隔短语，避免长句和分段；
+- 输出为单段（不要分段）；中文不超过100字；英文不超过50词；
 - 尽量补全缺失但常见且合理的细节；
 - 不要包含画幅比例、尺寸规格等技术参数（如 3:2 aspect ratio, 16:9, 1024x1024 等）；
 - 输出仅给最终 ${outputLang} Prompt，不要解释。
@@ -43,7 +44,10 @@ ${prompt}`;
         temperature: 0.7,
         topK: 40,
         topP: 0.8,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 64000,
+        thinking_config: {
+          thinking_budget: 16000
+        }
       },
       safetySettings: [
         {

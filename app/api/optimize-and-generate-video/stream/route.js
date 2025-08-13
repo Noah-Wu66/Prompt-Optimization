@@ -20,6 +20,7 @@ export async function POST(req) {
     const optimizeInput = `你是一名资深视频提示词工程师。请将以下提示词优化为面向通用 AI 视频生成模型的高质量 ${outputLang} Prompt，要求：
 - 将各种要素（主体、场景、动作、镜头运动、时间轴、光照变化、材质、配色、风格、节奏等）融合在一段连贯流畅的描述中；
 - 使用逗号分隔短语，避免长句和分段；
+- 输出为单段（不要分段）；中文不超过100字；英文不超过50词；
 - 重点描述动态元素、镜头运动和时间变化；
 - 尽量补全缺失但常见且合理的动态细节；
 - 不要包含视频规格、时长、帧率等技术参数（如 4K, 30fps, 16:9 等）；
@@ -44,7 +45,10 @@ ${prompt}`;
         temperature: 0.7,
         topK: 40,
         topP: 0.8,
-        maxOutputTokens: 2048,
+        maxOutputTokens: 64000,
+        thinking_config: {
+          thinking_budget: 16000
+        }
       },
       safetySettings: [
         {

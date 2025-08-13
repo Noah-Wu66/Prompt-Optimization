@@ -55,6 +55,7 @@ export async function POST(request) {
 Please follow these guidelines:
 - Integrate all elements (subjects, scenes, actions, camera movements, lighting changes, materials, colors, style, rhythm, etc.) into one coherent and fluent description;
 - Use comma-separated phrases, avoid long sentences and paragraphs;
+- Output as a single paragraph (no line breaks); limit to 50 words in English;
 - Focus on describing dynamic elements, camera movements and temporal changes;
 - Fill in missing but common and reasonable dynamic details;
 - Do not include video specifications, duration, frame rate and other technical parameters (such as 4K, 30fps, 16:9, etc.);
@@ -64,6 +65,7 @@ Please follow these guidelines:
 请遵循以下准则：
 - 将各种要素（主体、场景、动作、镜头运动、时间轴、光照变化、材质、配色、风格、节奏等）融合在一段连贯流畅的描述中；
 - 使用逗号分隔短语，避免长句和分段；
+- 输出为单段（不要分段）；中文不超过100字；英文不超过50词；
 - 重点描述动态元素、镜头运动和时间变化；
 - 尽量补全缺失但常见且合理的动态细节；
 - 不要包含视频规格、时长、帧率等技术参数（如 4K, 30fps, 16:9 等）；
@@ -97,7 +99,10 @@ Please follow these guidelines:
         temperature: 0.7,
         topK: 40,
         topP: 0.8,
-        maxOutputTokens: 2048,  // 与其他接口保持一致，避免过长输出
+        maxOutputTokens: 64000,
+        thinking_config: {
+          thinking_budget: 16000
+        }
       },
       safetySettings: [
         {
