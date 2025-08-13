@@ -48,27 +48,26 @@ export async function POST(request) {
     const lastFrameBase64 = Buffer.from(lastFrameBuffer).toString('base64');
 
     // 构建Gemini API请求
-    const systemPrompt = language === 'en' 
-      ? `You are a professional video prompt optimization expert. Analyze the provided first and last frame images, understand the transition process between them, and optimize the user's prompt to create a detailed video generation prompt that describes the smooth transition from the first frame to the last frame.
+    const outputLang = language === 'zh' ? '中文' : '英文';
+    const systemPrompt = language === 'en'
+      ? `You are a professional video prompt optimization expert. Analyze the provided first and last frame images, understand the transition process between them, and optimize the user's prompt to create a high-quality English video generation prompt that describes the smooth transition from the first frame to the last frame.
 
 Please follow these guidelines:
-1. Carefully analyze the visual differences between the two frames
-2. Describe the transition process, including changes in objects, lighting, camera movement, etc.
-3. Combine with the user's original prompt to create a comprehensive video prompt
-4. Use professional video generation terminology
-5. Ensure the prompt is detailed and specific for optimal video generation results
-
-Please respond in English and provide only the optimized prompt without additional explanations.`
-      : `你是专业的视频提示词优化专家。请分析提供的首帧和尾帧图片，理解两者之间的过渡过程，并优化用户的提示词，生成详细的视频生成提示词，描述从首帧到尾帧的平滑过渡。
+- Integrate all elements (subjects, scenes, actions, camera movements, lighting changes, materials, colors, style, rhythm, etc.) into one coherent and fluent description;
+- Use comma-separated phrases, avoid long sentences and paragraphs;
+- Focus on describing dynamic elements, camera movements and temporal changes;
+- Fill in missing but common and reasonable dynamic details;
+- Do not include video specifications, duration, frame rate and other technical parameters (such as 4K, 30fps, 16:9, etc.);
+- Output only the final English Prompt, no explanations.`
+      : `你是专业的视频提示词优化专家。请分析提供的首帧和尾帧图片，理解两者之间的过渡过程，并优化用户的提示词，生成面向 AI 视频生成的高质量 ${outputLang} Prompt，描述从首帧到尾帧的平滑过渡。
 
 请遵循以下准则：
-1. 仔细分析两张图片的视觉差异
-2. 描述过渡过程，包括物体变化、光线变化、镜头运动等
-3. 结合用户原始提示词，生成综合性的视频提示词
-4. 使用专业的视频生成术语
-5. 确保提示词详细具体，以获得最佳的视频生成效果
-
-请用中文回复，只提供优化后的提示词，不要额外的解释说明。`;
+- 将各种要素（主体、场景、动作、镜头运动、时间轴、光照变化、材质、配色、风格、节奏等）融合在一段连贯流畅的描述中；
+- 使用逗号分隔短语，避免长句和分段；
+- 重点描述动态元素、镜头运动和时间变化；
+- 尽量补全缺失但常见且合理的动态细节；
+- 不要包含视频规格、时长、帧率等技术参数（如 4K, 30fps, 16:9 等）；
+- 输出仅给最终 ${outputLang} Prompt，不要解释。`;
 
     const requestBody = {
       model: 'gemini-2.5-flash',
@@ -98,10 +97,7 @@ Please respond in English and provide only the optimized prompt without addition
         temperature: 0.7,
         topK: 40,
         topP: 0.8,
-        maxOutputTokens: 65536,  // 大幅增加输出token限制
-        thinking_config: {
-          thinking_budget: 16384  // 增加思考预算
-        }
+        maxOutputTokens: 2048,  // 与其他接口保持一致，避免过长输出
       },
       safetySettings: [
         {
