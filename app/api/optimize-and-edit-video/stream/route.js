@@ -21,9 +21,7 @@ export async function POST(req) {
     const form = await req.formData();
     const prompt = form.get('prompt');
     const language = form.get('language') || 'en';
-    if (!prompt || typeof prompt !== 'string') {
-      return NextResponse.json({ error: '提示词不能为空' }, { status: 400 });
-    }
+    const rawPrompt = typeof prompt === 'string' ? prompt.trim() : '';
     const fileObj = await readFileFromFormData(form);
     if (!fileObj) {
       return NextResponse.json({ error: '请上传参考图片' }, { status: 400 });
@@ -31,7 +29,8 @@ export async function POST(req) {
 
     const apiKey = getApiKey();
     const outputLang = language === 'zh' ? '中文' : '英文';
-    const optimizeInput = `你是一名资深视频提示词工程师。现在是图生视频（image to video）场景，请将以下提示词优化为面向 AI 视频生成的高质量 ${outputLang} Prompt，要求：
+    const optimizeInput = rawPrompt
+      ? `你是一名资深视频提示词工程师。现在是图生视频（image to video）场景，请将以下提示词优化为面向 AI 视频生成的高质量 ${outputLang} Prompt，要求：
 - 强调需要维持参考图的主体构成与关键风格特征，在此基础上添加合理的动态元素和镜头运动；
 - 将各种要素（主体动作、环境变化、镜头运动、时间轴、光照变化、材质、配色、风格、节奏等）融合在一段连贯流畅的描述中；
 - 使用逗号分隔短语，避免长句和分段；
@@ -41,13 +40,20 @@ export async function POST(req) {
 - 输出仅给最终 ${outputLang} Prompt，不要解释。
 
 原始提示词（可能是中文）：
-${prompt}`;
+${rawPrompt}`
+      : `你是一名资深视频提示词工程师。现在是图生视频（image to video）场景。用户未提供文字提示词，请仅基于上传的参考图片，自动推断最可能的运动方式与镜头运动，并生成面向 AI 视频生成的高质量 ${outputLang} Prompt，要求：
+- 识别画面主体与场景结构，推测自然合理的动作与相机运动（如平移、推进、环绕等）；
+- 将主体动作、环境变化、镜头运动、时间轴、光照变化、材质、配色、风格、节奏等融合在连贯的一段话中；
+- 使用逗号分隔短语，避免长句与分段；
+- 输出为单段；中文不超过100字；英文不超过50词；
+- 不要包含视频规格、时长、帧率等技术参数（如 4K, 30fps, 16:9 等）；
+- 仅输出最终 ${outputLang} Prompt，不要解释。`;
 
     // 检查图片大小，如果过大则提示用户
-    const maxSize = 4 * 1024 * 1024; // 4MB限制
+    const maxSize = 20 * 1024 * 1024; // 20MB限制
     if (fileObj.buffer.byteLength > maxSize) {
       return NextResponse.json(
-        { error: `图片过大（${Math.round(fileObj.buffer.byteLength / 1024 / 1024)}MB），请压缩至4MB以下` },
+        { error: `图片过大（${Math.round(fileObj.buffer.byteLength / 1024 / 1024)}MB），请压缩至20MB以下` },
         { status: 400 }
       );
     }

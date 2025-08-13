@@ -65,7 +65,8 @@ export default function HomePage() {
   }, []);
 
   const canSubmit = useMemo(() => {
-    if (!prompt.trim()) return false;
+    // 文生图/文生视频需要提示词；图生图/图生视频/首尾帧视频在上传必要图片后可不填提示词
+    if ((tab === 'txt2img' || tab === 'txt2video') && !prompt.trim()) return false;
     if ((tab === 'img2img' || tab === 'img2video') && !file) return false;
     if (tab === 'frame2video' && (!firstFrame || !lastFrame)) return false;
     return true;
@@ -544,7 +545,7 @@ export default function HomePage() {
       <div className="grid">
         <section className="card">
           <div className="field">
-            <label className="label">输入你的提示词</label>
+            <label className="label">{(tab === 'img2img' || tab === 'img2video' || tab === 'frame2video') ? '输入你的提示词（选填）' : '输入你的提示词'}</label>
             <textarea
               className="textarea"
               placeholder="描述主题、风格、构图、光照、色彩、细节、镜头、材质、分辨率等..."

@@ -8,10 +8,10 @@ export async function POST(request) {
     const firstFrame = formData.get('firstFrame');
     const lastFrame = formData.get('lastFrame');
 
-    // 验证输入
-    if (!prompt || !firstFrame || !lastFrame) {
+    // 验证输入（提示词改为选填，仅要求首尾帧）
+    if (!firstFrame || !lastFrame) {
       return NextResponse.json(
-        { error: '缺少必要参数：提示词、首帧或尾帧图片' },
+        { error: '缺少必要参数：首帧或尾帧图片' },
         { status: 400 }
       );
     }
@@ -78,7 +78,7 @@ Please follow these guidelines:
           role: 'user',
           parts: [
             {
-              text: `${systemPrompt}\n\n用户原始提示词：${prompt}`
+              text: `${systemPrompt}\n\n用户原始提示词：${(typeof prompt === 'string' ? prompt.trim() : '') || '(用户未提供提示词，请严格依据两张图片自行推断最可能的过渡方式，并直接输出高质量完整Prompt。)'}`
             },
             {
               inline_data: {
