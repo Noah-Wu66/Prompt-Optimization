@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useLayoutEffect } from 'react';
 
 export default function HomePage() {
   const [tab, setTab] = useState('txt2img');
@@ -32,7 +32,7 @@ export default function HomePage() {
   const [indicator, setIndicator] = useState({ left: 4, width: 0 });
 
   // 计算并更新指示器的位置与宽度
-  const updateIndicator = () => {
+  const updateIndicator = useCallback(() => {
     const track = trackRef.current;
     const activeEl = optionRefs.current?.[tab];
     if (!track || !activeEl) return;
@@ -41,7 +41,7 @@ export default function HomePage() {
     const left = Math.max(4, elRect.left - trackRect.left); // 4px 为 track 内边距
     const width = Math.max(0, elRect.width);
     setIndicator({ left, width });
-  };
+  }, [tab]);
 
   // 首次渲染与 tab 变更时更新
   useLayoutEffect(() => {
@@ -56,7 +56,7 @@ export default function HomePage() {
     const onResize = () => updateIndicator();
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, []);
+  }, [updateIndicator]);
 
   // 防御性移除托管环境可能注入的 Tailwind CDN 脚本（生产不应使用）
   useEffect(() => {
